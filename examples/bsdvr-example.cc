@@ -5,6 +5,7 @@
 #include "ns3/address-utils.h"
 #include "ns3/v4ping-helper.h"
 #include "ns3/network-module.h"
+#include "ns3/bsdvr-neighbor.h"
 #include "ns3/point-to-point-module.h"
 
 using namespace ns3;
@@ -22,9 +23,15 @@ main (int argc, char *argv[])
 
   /* ... */
   ns3::bsdvr::TypeHeader tHeader1 (ns3::bsdvr::BSDVRTYPE_HELLO);
-  std::cout << tHeader1 << tHeader1.IsValid()<<std::endl;
+  std::cout << tHeader1 << " : " << tHeader1.IsValid() << std::endl;
   ns3::bsdvr::TypeHeader tHeader2 (ns3::bsdvr::BSDVRTYPE_UPDATE);
-  std::cout << tHeader2 << tHeader2.IsValid()<<std::endl;
+  std::cout << tHeader2 << " : " << tHeader2.IsValid() << std::endl;
+  /* ... */
+  ns3::bsdvr::Neighbors links(Seconds (35));
+  links.Update(Ipv4Address (), Seconds(30));
+  std::cout << links.GetExpireTime(Ipv4Address ()) << std::endl;
+
+
   Simulator::Run ();
   Simulator::Destroy ();
   return 0;

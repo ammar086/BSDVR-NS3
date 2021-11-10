@@ -7,10 +7,11 @@
 #     conf.check_nonfatal(header_name='stdint.h', define_name='HAVE_STDINT_H')
 
 def build(bld):
-    module = bld.create_ns3_module('bsdvr', ['internet'])
+    module = bld.create_ns3_module('bsdvr', ['internet', 'wifi'])
     module.source = [
         'model/bsdvr.cc',
         'model/bsdvr-packet.cc',
+        'model/bsdvr-neighbor.cc',
         'helper/bsdvr-helper.cc',
         ]
 
@@ -29,6 +30,7 @@ def build(bld):
     headers.source = [
         'model/bsdvr.h',
         'model/bsdvr-packet.h',
+        'model/bsdvr-neighbor.h',
         'helper/bsdvr-helper.h',
         ]
 
