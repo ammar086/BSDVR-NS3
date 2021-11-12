@@ -10,6 +10,7 @@ def build(bld):
     module = bld.create_ns3_module('bsdvr', ['internet', 'wifi'])
     module.source = [
         'model/bsdvr.cc',
+        'model/bsdvr-rtable.cc',
         'model/bsdvr-packet.cc',
         'model/bsdvr-neighbor.cc',
         'helper/bsdvr-helper.cc',
@@ -29,6 +30,7 @@ def build(bld):
     headers.module = 'bsdvr'
     headers.source = [
         'model/bsdvr.h',
+        'model/bsdvr-rtable.h',
         'model/bsdvr-packet.h',
         'model/bsdvr-neighbor.h',
         'helper/bsdvr-helper.h',

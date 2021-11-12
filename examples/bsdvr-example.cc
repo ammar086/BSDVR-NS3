@@ -1,7 +1,9 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 #include <iostream>
+#include <fstream> 
 #include "ns3/core-module.h"
 #include "ns3/bsdvr-packet.h"
+#include "ns3/bsdvr-rtable.h"
 #include "ns3/address-utils.h"
 #include "ns3/v4ping-helper.h"
 #include "ns3/network-module.h"
@@ -30,7 +32,19 @@ main (int argc, char *argv[])
   ns3::bsdvr::Neighbors links(Seconds (35));
   links.Update(Ipv4Address (), Seconds(30));
   std::cout << links.GetExpireTime(Ipv4Address ()) << std::endl;
-
+  /* ... */
+  ns3::bsdvr::RoutingTableEntry entry (0, Ipv4Address (), Ipv4InterfaceAddress (), 5, Ipv4Address (), false);
+  std::filebuf fb;
+  fb.open ("test.txt",std::ios::out);
+  std::ostream os(&fb);
+  OutputStreamWrapper fs(&os);
+  entry.Print (&fs, Time::Unit ());
+  /* ... */
+  ns3::bsdvr::RoutingTable table;
+  std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry> tmp;
+  tmp = table.GetForwardingTable ();
+  table.AddRoute(entry,tmp);
+  table.Print (tmp, &fs, Time::Unit ());
 
   Simulator::Run ();
   Simulator::Destroy ();
