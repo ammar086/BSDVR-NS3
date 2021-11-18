@@ -33,6 +33,7 @@ def build(bld):
         'model/bsdvr-rtable.h',
         'model/bsdvr-packet.h',
         'model/bsdvr-neighbor.h',
+        'model/bsdvr-constants.h',
         'helper/bsdvr-helper.h',
         ]
 

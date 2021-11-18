@@ -281,38 +281,6 @@ public:
    */
   void Print (std::map<Ipv4Address, RoutingTableEntry> & map, Ptr<OutputStreamWrapper> stream, Time::Unit unit = Time::S) const;
 
-  /// BSDVR Control Plane Functions
-  /**
-   * Find if a route to a destination is better than an alternative route
-   * \param rt1 routing entry for a given destination
-   * \param rt2 alternative routing entry for the same destination
-   * \return true in success
-   */
-  bool isBetterRoute (RoutingTableEntry & r1, RoutingTableEntry & r2);
-  /**
-   * Remove alternative routes from DVT to avoid fake routes - [doesnot remove direct neighbor routes]
-   * \param nxtHp nexthop's address
-   * \param rt  new entry with destination address dst
-   */
-  void RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt); 
-  /**
-   * Update existing routes in DVT or add new routes
-   * \param nxtHp nexthop's address
-   * \param rt  new entry with destination address dst
-   */
-  void UpdateDistanceVectorTable (Ipv4Address nxtHp, RoutingTableEntry & rt); 
-  /**
-   * Update changes in existing routes from updated DVT
-   * \param dst destination address
-   * \param nxtHp nexthop's address
-   */
-  void RefreshForwardingTable (Ipv4Address dst, Ipv4Address nxtHp);
-   /**
-   * Replace existing routes with by alternative routes from updated DVT if any
-   * \returns a list of newly installed routes in FT to broadcast to neighbors
-   */
-  std::list<RoutingTableEntry> ComputeForwardingTable ();
-  
 private:
   /// The forwarding table (main routing table)
   std::map<Ipv4Address, RoutingTableEntry> m_ForwardingTable;
@@ -320,7 +288,7 @@ private:
   std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry> > m_DistanceVectorTable;
 };
 
-}  // namespace aodv
+}  // namespace bsdvr
 }  // namespace ns3
 
 #endif /* BSDVR_RTABLE_H */

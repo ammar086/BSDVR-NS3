@@ -1,4 +1,3 @@
-#include <iomanip>
 #include "ns3/log.h"
 #include <algorithm>
 #include "bsdvr-rtable.h"
@@ -47,21 +46,21 @@ RoutingTableEntry::Print (Ptr<OutputStreamWrapper> stream, Time::Unit unit /* = 
   *os << std::setw (16) << dest.str ();
   *os << std::setw (16) << gw.str ();
   *os << std::setw (16) << iface.str ();
-  *os << std::setw (16) << m_hops;
   *os << std::setw (16);
   switch (m_state)
     {
     case ACTIVE:
       {
-        *os << "ACTIVE" << std::endl;
+        *os << "ACTIVE";
         break;
       }
     case INACTIVE:
       {
-        *os << "INACTIVE" << std::endl;
+        *os << "INACTIVE";
         break;
       }  
     }
+  *os << std::setw (16) << m_hops << std::endl;
   // Restore the previous ostream state
   (*os).copyfmt (oldState);
 }
@@ -173,8 +172,8 @@ RoutingTable::Print (std::map<Ipv4Address, RoutingTableEntry> & map, Ptr<OutputS
   *os << std::setw (16) << "Destination";
   *os << std::setw (16) << "Gateway";
   *os << std::setw (16) << "Interface";
-  *os << std::setw (16) << "HopCount";
-  *os << std::setw (16) << "State" << std::endl;
+  *os << std::setw (16) << "State";
+  *os << std::setw (16) << "Hops" << std::endl;
   for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = map.begin (); i
        != map.end (); ++i)
     {
@@ -186,20 +185,5 @@ RoutingTable::Print (std::map<Ipv4Address, RoutingTableEntry> & map, Ptr<OutputS
 
 }
 
-/*
- BSDVR Control Plane Functions
- */
-
-bool isBetterRoute (RoutingTableEntry & r1, RoutingTableEntry & r2){return false;}
-void RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt){}
-void UpdateDistanceVectorTable (Ipv4Address nxtHp, RoutingTableEntry & rt){}
-void RefreshForwardingTable (Ipv4Address dst, Ipv4Address nxtHp){}
-std::list<RoutingTableEntry> ComputeForwardingTable ()
-{
-  std::list<RoutingTableEntry> changes;
-  return changes;
-}
-
-
-}  // namespace aodv
+}  // namespace bsdvr
 }  // namespace ns3
