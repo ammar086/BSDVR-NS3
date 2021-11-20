@@ -1,7 +1,6 @@
 #ifndef BSDVRPACKET_H
 #define BSDVRPACKET_H
 
-#include <map>
 #include <iostream>
 #include "ns3/enum.h"
 #include "ns3/header.h"

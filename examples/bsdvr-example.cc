@@ -1,14 +1,11 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 #include <iostream>
 #include <fstream> 
+#include "ns3/bsdvr.h"
 #include "ns3/core-module.h"
-#include "ns3/bsdvr-packet.h"
-#include "ns3/bsdvr-rtable.h"
 #include "ns3/address-utils.h"
 #include "ns3/v4ping-helper.h"
 #include "ns3/network-module.h"
-#include "ns3/bsdvr-neighbor.h"
-#include "ns3/bsdvr-constants.h"
 #include "ns3/point-to-point-module.h"
 
 using namespace ns3;
@@ -42,6 +39,7 @@ main (int argc, char *argv[])
   entry.Print (&fs, Time::Unit ());
   /* ... */
   ns3::bsdvr::RoutingTable table;
+  ns3::bsdvr::RoutingProtocol protocol;
   std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry> tmp;
   tmp = table.GetForwardingTable ();
   table.AddRoute(entry,tmp);
@@ -52,8 +50,8 @@ main (int argc, char *argv[])
   // r2.SetRouteState (ns3::bsdvr::ACTIVE);
   r1.Print (&fs, Time::Unit ());
   r2.Print (&fs, Time::Unit ());
-  std::cout << "Threshold for hopCount is: " << bsdvr::constants::THRESHOLD << std::endl;
-  // std::cout<< "r1 is better than r2: " << table.isBetterRoute(r1, r2) << std::endl;
+  std::cout << "Threshold for hopCount is: " << bsdvr::constants::BSDVR_THRESHOLD << std::endl;
+  std::cout<< "r1 is better than r2: " << protocol.isBetterRoute2(r1,r2) << std::endl;
   /* ... */
 
   Simulator::Run ();
