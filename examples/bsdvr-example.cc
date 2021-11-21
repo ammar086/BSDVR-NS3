@@ -41,12 +41,6 @@ main (int argc, char *argv[])
   /* ... */
   ns3::bsdvr::RoutingTable table;
   ns3::bsdvr::RoutingProtocol protocol;
-<<<<<<< Updated upstream
-  std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry> tmp;
-  tmp = table.GetForwardingTable ();
-  table.AddRoute(entry,tmp);
-  table.Print (tmp, &fs, Time::Unit ());
-=======
   std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = table.GetForwardingTable ();
   std::map<Ipv4Address, std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* >* dvt = table.GetDistanceVectorTable ();
   std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry> n1_entries;
@@ -58,7 +52,6 @@ main (int argc, char *argv[])
   table.AddRoute(entry,n1_entries);
   table.AddRoute(entry2,n2_entries);
   std::cout << "outer_map: " << dvt->size() << ", inner_map1: " << (*dvt)[Ipv4Address(1)]->size() << ", inner_map2: " << (*dvt)[Ipv4Address(2)]->size() << std::endl; 
->>>>>>> Stashed changes
   /* ... */
   table.AddRoute(entry,*ft);
   table.Print (*ft, &fs, Time::Unit ());
