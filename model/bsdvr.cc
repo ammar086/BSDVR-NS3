@@ -331,17 +331,103 @@ RoutingProtocol::UpdateDistanceVectorTable (Ipv4Address nxtHp, RoutingTableEntry
       std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[nxtHp];
       (*n_dvt_entries)[dst] = rt;
     } 
-  
-
 }
 
 void
-RoutingProtocol::RefreshForwardingTable (Ipv4Address dst, Ipv4Address nxtHp){}
+RoutingProtocol::RefreshForwardingTable (Ipv4Address dst, Ipv4Address nxtHp)
+{
+  Ipv4Address curr_nxtHp;
+  // Tables
+  std::map<Ipv4Address, RoutingTableEntry> *ft = m_routingTable.GetForwardingTable ();
+  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > *dvt = m_routingTable.GetDistanceVectorTable ();
+  // Iterators
+  std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
+  std::map<Ipv4Address, RoutingTableEntry>::iterator n_dvt_entry;
+  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >::iterator n_dvt;
 
-std::list<RoutingTableEntry> 
+  n_dvt = (*dvt).find (nxtHp);
+  if (n_dvt != dvt->end ())
+    {
+      std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[nxtHp];
+      n_dvt_entry = n_dvt_entries->find (dst);
+      if (n_dvt_entry != n_dvt_entries->end ())
+        {
+          (*ft)[dst] = n_dvt_entry->second;
+        }
+    }
+  else
+    {
+      (*ft)[dst].SetRouteState (INACTIVE);
+    }
+}
+
+std::list<Ipv4Address> 
 RoutingProtocol::ComputeForwardingTable ()
 {
-  std::list<RoutingTableEntry> changes;
+  Ipv4Address curr_nxtHp;
+  RoutingTableEntry old_entry;
+  RoutingTableEntry new_entry;
+  RoutingTableEntry curr_entry;
+  std::list<Ipv4Address> changes;
+  // Tables
+  std::vector<Neighbors::Neighbor> m_neighbors =  m_nb.GetNeighbors();
+  std::map<Ipv4Address, RoutingTableEntry> *ft = m_routingTable.GetForwardingTable ();
+  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > *dvt = m_routingTable.GetDistanceVectorTable ();
+  // Iterators
+  std::list<Ipv4Address>::iterator c;
+  std::vector<Neighbors::Neighbor>::iterator n;
+  std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
+  std::map<Ipv4Address, RoutingTableEntry>::iterator n_dvt_entry;
+
+  for (std::vector<Neighbors::Neighbor>::iterator i = m_neighbors.begin ();
+       i != m_neighbors.end (); ++i)
+      {
+        std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
+        for (n_dvt_entry = n_dvt_entries->begin (); n_dvt_entry != n_dvt_entries->end (); n_dvt_entry++)
+        {
+          ft_entry = ft->find (n_dvt_entry->first);
+          if (ft_entry != ft->end ())
+            {
+              try
+              {
+                curr_nxtHp = (*ft)[n_dvt_entry->first].GetNextHop ();
+                old_entry = (*ft)[n_dvt_entry->first];
+                RefreshForwardingTable (n_dvt_entry->first, curr_nxtHp);
+                new_entry = (*(*dvt)[i->m_neighborAddress])[n_dvt_entry->first];
+                curr_entry = (*ft)[n_dvt_entry->first];
+                if (isBetterRoute (new_entry, curr_entry))
+                  {
+                    (*ft)[n_dvt_entry->first] = new_entry;
+                    c = std::find(changes.begin (), changes.end (), n_dvt_entry->first);
+                    if (c != changes.end ())
+                      {
+                        changes.push_back (n_dvt_entry->first);
+                      }
+                  }
+                else if ((curr_entry.GetHop () != old_entry.GetHop ()) || (curr_entry.GetRouteState () != old_entry.GetRouteState ()))
+                  {
+                    c = std::find(changes.begin (), changes.end (), n_dvt_entry->first);
+                    if (c != changes.end ())
+                      {
+                        changes.push_back (n_dvt_entry->first);
+                      }
+                  }
+              }
+              catch(const std::exception& e)
+              {
+                std::cerr << e.what() << '\n';
+              }
+              
+            }
+          else
+            {
+              new_entry = (*(*dvt)[i->m_neighborAddress])[n_dvt_entry->first];
+              (*ft)[n_dvt_entry->first] = new_entry;
+              changes.push_back (n_dvt_entry->first);
+            }
+        }
+      }
+  changes.remove (m_mainAddress);
   return changes;
 }
 

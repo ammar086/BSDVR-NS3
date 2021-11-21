@@ -77,7 +77,8 @@ private:
   void NotifyTxError (WifiMacDropReason reason, Ptr<const WifiMacQueueItem> mpdu);
 
   // Protocol parameters
-
+  /// Nodes IP address
+  Ipv4Address m_mainAddress;
   /// IP protocol
   Ptr<Ipv4> m_ipv4;
   /// Raw unicast socket per each IP interface, map socket -> iface address (IP + mask)
@@ -239,7 +240,7 @@ private:
    * Replace existing routes with by alternative routes from updated DVT if any
    * \returns a list of newly installed routes in FT to broadcast to neighbors
    */
-  std::list<RoutingTableEntry> ComputeForwardingTable ();
+  std::list<Ipv4Address> ComputeForwardingTable ();
 
   /// Provides uniform random variables.
   Ptr<UniformRandomVariable> m_uniformRandomVariable;
