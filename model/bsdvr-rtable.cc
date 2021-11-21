@@ -71,6 +71,7 @@ RoutingTableEntry::Print (Ptr<OutputStreamWrapper> stream, Time::Unit unit /* = 
 RoutingTable::RoutingTable ()
 {
 }
+
 bool
 RoutingTable::LookupRoute (Ipv4Address id, RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry> & map)
 {

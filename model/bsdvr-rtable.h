@@ -213,17 +213,17 @@ public:
    * Get forwarding table
    * \returns the forwarding table
    */
-  std::map<Ipv4Address, RoutingTableEntry> GetForwardingTable () const
+  std::map<Ipv4Address, RoutingTableEntry>* GetForwardingTable ()
   {
-    return m_ForwardingTable;
+    return &m_ForwardingTable;
   }
   /**
    * Get distance vector table
    * \returns the distance vector table
    */
-  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>> GetDistanceVectorTable () const
+  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >* GetDistanceVectorTable ()
   {
-    return m_DistanceVectorTable;
+    return &m_DistanceVectorTable;
   }
   /**
    * Add routing table entry if it doesn't yet exist in routing table
@@ -285,7 +285,7 @@ private:
   /// The forwarding table (main routing table)
   std::map<Ipv4Address, RoutingTableEntry> m_ForwardingTable;
   /// The distance vector table (alternative entries)
-  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry> > m_DistanceVectorTable;
+  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > m_DistanceVectorTable;
 };
 
 }  // namespace bsdvr
