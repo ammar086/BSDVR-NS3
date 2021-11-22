@@ -113,19 +113,39 @@ private:
 
 NS_OBJECT_ENSURE_REGISTERED (DeferredRouteOutputTag);
 
-TypeId
-RoutingProtocol::GetTypeId (void)
-{
-  static TypeId tid = TypeId ("ns3::bsdvr::RoutingProtocol");
-  return tid;
-}
-
+//-----------------------------------------------------------------------------
 RoutingProtocol::RoutingProtocol ()
   : m_helloInterval (Seconds (1)),
     m_nb (m_helloInterval),
     m_maxQueueLen (64),
     m_htimer (Timer::CANCEL_ON_DESTROY)
 {
+}
+
+TypeId
+RoutingProtocol::GetTypeId (void)
+{
+  static TypeId tid = TypeId ("ns3::bsdvr::RoutingProtocol")
+    //FIXME: Add attributes for data plane packet buffer and control plane pending reply buffer
+    .SetParent<Ipv4RoutingProtocol> ()
+    .SetGroupName ("Bsdvr")
+    .AddConstructor<RoutingProtocol> ()
+    .AddAttribute ("HelloInterval", "HELLO messages emission interval.",
+                   TimeValue (Seconds (1)),
+                   MakeTimeAccessor (&RoutingProtocol::m_helloInterval),
+                   MakeTimeChecker ())
+    // .AddAttribute ("MaxQueueLen", "Maximum number of packets that we allow a routing protocol to buffer.",
+    //                UintegerValue (64),
+    //                MakeUintegerAccessor (&RoutingProtocol::SetMaxQueueLen,
+    //                                      &RoutingProtocol::GetMaxQueueLen),
+    //                MakeUintegerChecker<uint32_t> ())
+    .AddAttribute ("UniformRv",
+                   "Access to the underlying UniformRandomVariable",
+                   StringValue ("ns3::UniformRandomVariable"),
+                   MakePointerAccessor (&RoutingProtocol::m_uniformRandomVariable),
+                   MakePointerChecker<UniformRandomVariable> ())
+    ;
+  return tid;
 }
 
 RoutingProtocol::~RoutingProtocol ()
@@ -135,7 +155,39 @@ RoutingProtocol::~RoutingProtocol ()
 void
 RoutingProtocol::DoDispose ()
 {
+  m_ipv4 = 0;
+  for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::iterator iter = 
+       m_socketAddresses.begin (); iter != m_socketAddresses.end (); iter++)
+     {
+       iter->first->Close ();
+     }
+  m_socketAddresses.clear ();
+  Ipv4RoutingProtocol::DoDispose ();
 }
+
+void 
+RoutingProtocol::PrintRoutingTable (Ptr<OutputStreamWrapper> stream, Time::Unit unit) const
+{
+  *stream->GetStream () << "Node: " << m_ipv4->GetObject<Node> ()->GetId ()
+                        << "; Time: " << Now ().As (unit)
+                        << ", Local time: " << m_ipv4->GetObject<Node> ()->GetLocalTime ().As (unit)
+                        << ", BSDVR Routing table" << std::endl;
+  std::map<Ipv4Address, RoutingTableEntry> ft = m_routingTable.GetForwardingTablePrint ();                 
+  m_routingTable.Print (&ft, stream, unit);
+  *stream->GetStream () << std::endl;
+}
+
+int64_t 
+RoutingProtocol::AssignStreams (int64_t stream)
+{
+  NS_LOG_FUNCTION (this << stream);
+  m_uniformRandomVariable->SetStream (stream);
+  return 1;
+}
+
+
+
+
 
 Ptr<Ipv4Route> 
 RoutingProtocol::RouteOutput (Ptr<Packet> p, const Ipv4Header &header, Ptr<NetDevice> oif, Socket::SocketErrno &sockerr)
@@ -167,10 +219,6 @@ RoutingProtocol::NotifyRemoveAddress (uint32_t interface, Ipv4InterfaceAddress a
 }
 void 
 RoutingProtocol::SetIpv4 (Ptr<Ipv4> ipv4)
-{
-}
-void 
-RoutingProtocol::PrintRoutingTable (Ptr<OutputStreamWrapper> stream, Time::Unit unit) const
 {
 }
 void

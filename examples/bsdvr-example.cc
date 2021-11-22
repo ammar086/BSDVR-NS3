@@ -54,7 +54,7 @@ main (int argc, char *argv[])
   std::cout << "outer_map: " << dvt->size() << ", inner_map1: " << (*dvt)[Ipv4Address(1)]->size() << ", inner_map2: " << (*dvt)[Ipv4Address(2)]->size() << std::endl; 
   /* ... */
   table.AddRoute(entry,*ft);
-  table.Print (*ft, &fs, Time::Unit ());
+  table.Print (ft, &fs, Time::Unit ());
   ns3::bsdvr::RoutingTableEntry r1 (0, Ipv4Address (), Ipv4InterfaceAddress (), 7, Ipv4Address (), false);
   ns3::bsdvr::RoutingTableEntry r2 (0, Ipv4Address (), Ipv4InterfaceAddress (), 4, Ipv4Address (), false);
   // r2.SetRouteState (ns3::bsdvr::ACTIVE);
@@ -63,7 +63,9 @@ main (int argc, char *argv[])
   std::cout << "Threshold for hopCount is: " << bsdvr::constants::BSDVR_THRESHOLD << std::endl;
   std::cout<< "r1 is better than r2: " << protocol.isBetterRoute2(r1,r2) << std::endl;
   /* ... */
-
+  protocol.RefreshForwardingTable2 (Ipv4Address (), Ipv4Address ());
+  std::cout<< "Refreshing FT entry for "<< Ipv4Address ().Get () << std::endl;
+  /* ... */
   Simulator::Run ();
   Simulator::Destroy ();
   return 0;

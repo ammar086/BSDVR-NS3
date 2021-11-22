@@ -160,7 +160,7 @@ RoutingTable::DeleteAllRoutesFromInterface (Ipv4InterfaceAddress iface, std::map
     }
 }
 void
-RoutingTable::Print (std::map<Ipv4Address, RoutingTableEntry> & map, Ptr<OutputStreamWrapper> stream, Time::Unit unit /* = Time::S */) const
+RoutingTable::Print (std::map<Ipv4Address, RoutingTableEntry>* map, Ptr<OutputStreamWrapper> stream, Time::Unit unit /* = Time::S */) const
 {
   std::ostream* os = stream->GetStream ();
   // Copy the current ostream state
@@ -175,8 +175,8 @@ RoutingTable::Print (std::map<Ipv4Address, RoutingTableEntry> & map, Ptr<OutputS
   *os << std::setw (16) << "Interface";
   *os << std::setw (16) << "State";
   *os << std::setw (16) << "Hops" << std::endl;
-  for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = map.begin (); i
-       != map.end (); ++i)
+  for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = map->begin (); i
+       != map->end (); ++i)
     {
       i->second.Print (stream, unit);
     }

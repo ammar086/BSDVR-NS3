@@ -213,6 +213,14 @@ public:
    * Get forwarding table
    * \returns the forwarding table
    */
+  std::map<Ipv4Address, RoutingTableEntry> GetForwardingTablePrint () const
+  {
+    return &m_ForwardingTable;
+  }
+  /**
+   * Get forwarding table
+   * \returns the forwarding table
+   */
   std::map<Ipv4Address, RoutingTableEntry>* GetForwardingTable ()
   {
     return &m_ForwardingTable;
@@ -279,7 +287,7 @@ public:
    * \param unit The time unit to use (default Time::S)
    * \param map Ipv4 address to entry map
    */
-  void Print (std::map<Ipv4Address, RoutingTableEntry> & map, Ptr<OutputStreamWrapper> stream, Time::Unit unit = Time::S) const;
+  void Print (std::map<Ipv4Address, RoutingTableEntry>* map, Ptr<OutputStreamWrapper> stream, Time::Unit unit = Time::S) const;
 
 private:
   /// The forwarding table (main routing table)

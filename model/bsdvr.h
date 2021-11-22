@@ -65,6 +65,11 @@ public:
     return isBetterRoute (r1,r2);
   }
 
+  void RefreshForwardingTable2 (Ipv4Address dst, Ipv4Address nxtHp)
+  {
+    RefreshForwardingTable (dst, nxtHp);
+  }
+
 protected:
   virtual void DoInitialize (void);
 private:
