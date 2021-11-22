@@ -115,7 +115,8 @@ NS_OBJECT_ENSURE_REGISTERED (DeferredRouteOutputTag);
 
 //-----------------------------------------------------------------------------
 RoutingProtocol::RoutingProtocol ()
-  : m_helloInterval (Seconds (1)),
+  : m_enableHello (false),
+    m_helloInterval (Seconds (1)),
     m_nb (m_helloInterval),
     m_maxQueueLen (64),
     m_htimer (Timer::CANCEL_ON_DESTROY)
@@ -139,6 +140,11 @@ RoutingProtocol::GetTypeId (void)
     //                MakeUintegerAccessor (&RoutingProtocol::SetMaxQueueLen,
     //                                      &RoutingProtocol::GetMaxQueueLen),
     //                MakeUintegerChecker<uint32_t> ())
+    .AddAttribute ("EnableHello", "Indicates whether a hello messages enable.",
+                   BooleanValue (true),
+                   MakeBooleanAccessor (&RoutingProtocol::SetHelloEnable,
+                                        &RoutingProtocol::GetHelloEnable),
+                   MakeBooleanChecker ())
     .AddAttribute ("UniformRv",
                    "Access to the underlying UniformRandomVariable",
                    StringValue ("ns3::UniformRandomVariable"),
@@ -185,15 +191,82 @@ RoutingProtocol::AssignStreams (int64_t stream)
   return 1;
 }
 
+void
+RoutingProtocol::DoInitialize (void)
+{
+  NS_LOG_FUNCTION (this);
+  uint32_t startTime;
+  if (m_enableHello)
+    {
+      m_htimer.SetFunction (&RoutingProtocol::HelloTimerExpire, this);
+      startTime = m_uniformRandomVariable->GetInteger (0, 100);
+      NS_LOG_DEBUG ("Starting at time " << startTime << "ms");
+      m_htimer.Schedule (MilliSeconds (startTime));
+    }
+  Ipv4RoutingProtocol::DoInitialize ();
+}
 
-
-
+void 
+RoutingProtocol::Start ()
+{
+  NS_LOG_FUNCTION (this);
+  if (m_enableHello)
+    {
+      m_nb.ScheduleTimer ();
+    }
+}
 
 Ptr<Ipv4Route> 
-RoutingProtocol::RouteOutput (Ptr<Packet> p, const Ipv4Header &header, Ptr<NetDevice> oif, Socket::SocketErrno &sockerr)
+RoutingProtocol::LoopbackRoute (const Ipv4Header & header, Ptr<NetDevice> oif) const
 {
+  return Ptr<Ipv4Route> ();
+}
+
+Ptr<Ipv4Route> 
+RoutingProtocol::RouteOutput (Ptr<Packet> p, const Ipv4Header &header, 
+                              Ptr<NetDevice> oif, Socket::SocketErrno &sockerr)
+{
+  NS_LOG_FUNCTION (this << header << (oif ? oif->GetIfIndex () : 0));
+  if (!p)
+    {
+      NS_LOG_DEBUG ("Packet is == 0");
+      return LoopbackRoute (header, oif);
+    }
+  if (m_socketAddresses.empty ())
+    {
+      sockerr = Socket::ERROR_NOROUTETOHOST;
+      NS_LOG_LOGIC ("No bsdvr interfaces");
+      Ptr<Ipv4Route> route;
+      return route;
+    }
+  sockerr = Socket::ERROR_NOTERROR;
   Ptr<Ipv4Route> route;
-  return route;
+  Ipv4Address dst = header.GetDestination ();
+  RoutingTableEntry rt;
+  std::map<Ipv4Address, RoutingTableEntry> *ft = m_routingTable.GetForwardingTable (); 
+  if (m_routingTable.LookupRoute(dst, rt, ft))
+    {
+      route = rt.GetRoute ();
+      NS_ASSERT (route != 0);
+      NS_LOG_DEBUG ("Exist route to " << route->GetDestination () << " from interface " << route->GetSource ());
+      if (oif != 0 && route->GetOutputDevice () != oif)
+        {
+          NS_LOG_DEBUG ("Output device doesn't match. Dropped.");
+          sockerr = Socket::ERROR_NOROUTETOHOST;
+          return Ptr<Ipv4Route> ();
+        }
+      return route;
+    }
+  // Valid route not found, in this case we return loopback.
+  // routed to loopback, received from loopback and passed to RouteInput (see below)
+  uint32_t iif = (oif ? m_ipv4->GetInterfaceForDevice (oif) : -1);
+  DeferredRouteOutputTag tag (iif);
+  NS_LOG_DEBUG ("Valid Route not found");
+  if (!p->PeekPacketTag (tag))
+    {
+      p->AddPacketTag (tag);
+    }
+  return LoopbackRoute (header, oif);
 }
 bool 
 RoutingProtocol::RouteInput (Ptr<const Packet> p, const Ipv4Header &header, Ptr<const NetDevice> idev, UnicastForwardCallback ucb, 
@@ -222,7 +295,7 @@ RoutingProtocol::SetIpv4 (Ptr<Ipv4> ipv4)
 {
 }
 void
-RoutingProtocol::DoInitialize (void)
+RoutingProtocol::HelloTimerExpire ()
 {
 }
 //-----------------------------------------------------------------------------

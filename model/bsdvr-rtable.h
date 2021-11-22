@@ -226,6 +226,14 @@ public:
     return &m_ForwardingTable;
   }
   /**
+   * Get forwarding table
+   * \returns the forwarding table
+   */
+  std::map<Ipv4Address, RoutingTableEntry>* GetForwardingTable ()
+  {
+    return &m_ForwardingTable;
+  }
+  /**
    * Get distance vector table
    * \returns the distance vector table
    */
@@ -254,7 +262,7 @@ public:
    * \param map Ipv4 address to entry map
    * \return true on success
    */
-  bool LookupRoute (Ipv4Address dst, RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry> & map);
+  bool LookupRoute (Ipv4Address dst, RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry>* map);
   /**
    * Updating the routing Table with routing table entry rt
    * \param rt routing table entry

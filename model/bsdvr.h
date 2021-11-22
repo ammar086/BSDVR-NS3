@@ -51,6 +51,23 @@ public:
   virtual void PrintRoutingTable (Ptr<OutputStreamWrapper> stream, Time::Unit unit = Time::S) const;
   
   /**
+   * Set hello enable
+   * \param f the hello enable flag
+   */
+  void SetHelloEnable (bool f)
+  {
+    m_enableHello = f;
+  }
+  /**
+   * Get hello enable flag
+   * \returns the enable hello flag
+   */
+  bool GetHelloEnable () const
+  {
+    return m_enableHello;
+  }
+
+  /**
    * Assign a fixed random variable stream number to the random variables
    * used by this model.  Return the number of streams (possibly zero) that
    * have been assigned.
@@ -83,6 +100,7 @@ private:
 
   // Protocol parameters
   /// Nodes IP address
+  /// NOTE: Verify if m_mainAddress is really required
   Ipv4Address m_mainAddress;
   /// IP protocol
   Ptr<Ipv4> m_ipv4;
@@ -96,6 +114,8 @@ private:
   RoutingTable m_routingTable;
   /// A "drop-front" queue used by the routing layer with binary state precedence rules to buffer packets to which it does not have a route.
   //PacketQueue m_queue;
+  /// Indicates whether a hello messages enable
+  bool m_enableHello;
   /**
    * Every HelloInterval the node checks whether it has sent a broadcast  within the last HelloInterval.
    * If it has not, it MAY broadcast a  Hello message

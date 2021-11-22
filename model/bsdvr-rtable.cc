@@ -73,15 +73,15 @@ RoutingTable::RoutingTable ()
 }
 
 bool
-RoutingTable::LookupRoute (Ipv4Address id, RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry> & map)
+RoutingTable::LookupRoute (Ipv4Address id, RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry>* map)
 {
-  if (map.empty ())
+  if (map->empty ())
     {
       NS_LOG_LOGIC ("Route to " << id << " not found; table is empty");
       return false;
     }
-  std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = map.find (id);
-  if (i == map.end ())
+  std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = map->find (id);
+  if (i == map->end ())
     {
       NS_LOG_LOGIC ("Route to " << id << " not found");
       return false;
