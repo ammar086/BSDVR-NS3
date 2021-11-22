@@ -102,11 +102,11 @@ RoutingTable::DeleteRoute (Ipv4Address dst, std::map<Ipv4Address, RoutingTableEn
   return false;
 }
 bool
-RoutingTable::AddRoute (RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry> & map)
+RoutingTable::AddRoute (RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry>* map)
 {
   NS_LOG_FUNCTION (this);
   std::pair<std::map<Ipv4Address, RoutingTableEntry>::iterator, bool> result =
-    map.insert (std::make_pair (rt.GetDestination (), rt));
+    map->insert (std::make_pair (rt.GetDestination (), rt));
   return result.second;
 }
 bool

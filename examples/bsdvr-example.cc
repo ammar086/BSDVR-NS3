@@ -49,11 +49,11 @@ main (int argc, char *argv[])
   // n1_entries[Ipv4Address()] = entry2;
   (*dvt)[Ipv4Address(1)] = &n1_entries;
   (*dvt)[Ipv4Address(2)] = &n2_entries;
-  table.AddRoute(entry,n1_entries);
-  table.AddRoute(entry2,n2_entries);
+  table.AddRoute(entry,&n1_entries);
+  table.AddRoute(entry2,&n2_entries);
   std::cout << "outer_map: " << dvt->size() << ", inner_map1: " << (*dvt)[Ipv4Address(1)]->size() << ", inner_map2: " << (*dvt)[Ipv4Address(2)]->size() << std::endl; 
   /* ... */
-  table.AddRoute(entry,*ft);
+  table.AddRoute(entry,ft);
   table.Print (ft, &fs, Time::Unit ());
   ns3::bsdvr::RoutingTableEntry r1 (0, Ipv4Address (), Ipv4InterfaceAddress (), 7, Ipv4Address (), false);
   ns3::bsdvr::RoutingTableEntry r2 (0, Ipv4Address (), Ipv4InterfaceAddress (), 4, Ipv4Address (), false);

@@ -275,25 +275,138 @@ RoutingProtocol::RouteOutput (Ptr<Packet> p, const Ipv4Header &header,
     }
   return LoopbackRoute (header, oif);
 }
-// void 
-// DeferredRouteOutput (Ptr<const Packet> p, const Ipv4Header & header, 
-//                      UnicastForwardCallback ucb, ErrorCallback ecb)
-// {
-//   NS_LOG_FUNCTION (this << p << header);
-//   NS_ASSERT (p != 0 && p != Ptr<Packet> ());
-//   QueueEntry newEntry (p, header, ucb, ecb);
-//   bool result = m_queue.Enqueue (newEntry);
 
-// }
+void 
+RoutingProtocol::DeferredRouteOutput (Ptr<const Packet> p, const Ipv4Header & header, 
+                     UnicastForwardCallback ucb, ErrorCallback ecb)
+{
+  NS_LOG_FUNCTION (this << p << header);
+  NS_ASSERT (p != 0 && p != Ptr<Packet> ());
+  QueueEntry newEntry (p, Status(), header, ucb, ecb);
+  bool result = m_queue.Enqueue (newEntry);
+  if (result)
+    {
+      NS_LOG_LOGIC ("Added packet " << p->GetUid () << " to queue");
+    }
+}
+
 bool 
 RoutingProtocol::RouteInput (Ptr<const Packet> p, const Ipv4Header &header, Ptr<const NetDevice> idev, UnicastForwardCallback ucb, 
                    MulticastForwardCallback mcb, LocalDeliverCallback lcb, ErrorCallback ecb)
 {
+  NS_LOG_FUNCTION (this << " received packet " << p->GetUid ()
+                        << " from " << header.GetSource ()
+                        << " on interface " << idev->GetAddress ()
+                        << " to destination " << header.GetDestination ());
+  if (m_socketAddresses.empty ())
+    {
+      NS_LOG_LOGIC ("No Bsdvr interfaces");
+      return false;
+    }
+  NS_ASSERT (m_ipv4 != 0);
+  // Check if input device supports IP
+  NS_ASSERT (m_ipv4->GetInterfaceForDevice (idev) >= 0);
+  // int32_t iif = m_ipv4->GetInterfaceForDevice (idev);
+
+  Ipv4Address dst = header.GetDestination ();
+  Ipv4Address origin = header.GetSource ();
+
+  // Deferred route request
+  if (idev == m_lo)
+    {
+      DeferredRouteOutputTag tag;
+      if (p->PeekPacketTag (tag))
+        {
+          DeferredRouteOutput (p, header, ucb, ecb);
+          return true;
+        }
+    }
+  // Duplicate of own packet
+  if (IsMyOwnAddress (origin))
+    {
+      return true;
+    }
+  // BSDVR is not a multicast routing protocol
+  if (dst.IsMulticast ())
+    {
+      return false;
+    }
+  ///Note: Add remaining RouteInput logic
   return true;
 }
 void 
-RoutingProtocol::NotifyInterfaceUp (uint32_t interface)
+RoutingProtocol::SetIpv4 (Ptr<Ipv4> ipv4)
 {
+  NS_ASSERT (ipv4 != 0);
+  NS_ASSERT (m_ipv4 == 0);
+  m_ipv4 = ipv4;
+  // Create lo route. It is asserted that the only one interface up for now is loopback
+  NS_ASSERT (m_ipv4->GetNInterfaces () == 1 && m_ipv4->GetAddress (0, 0).GetLocal () == Ipv4Address ("127.0.0.1"));
+  m_lo = m_ipv4->GetNetDevice (0);
+  NS_ASSERT (m_lo != 0);
+  // Remember lo route
+  RoutingTableEntry rt(/*device=*/ m_lo, /*dst=*/ Ipv4Address::GetLoopback (), 
+                       /*iface=*/ Ipv4InterfaceAddress (Ipv4Address::GetLoopback (), Ipv4Mask ("255.0.0.0")), 
+                       /*hops=*/ 1, /*next hop=*/ Ipv4Address::GetLoopback (), /*changedEntries*/ false);
+  std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
+  m_routingTable.AddRoute (rt, ft);
+  Simulator::ScheduleNow (&RoutingProtocol::Start,this);
+}
+void 
+RoutingProtocol::NotifyInterfaceUp (uint32_t i)
+{
+  NS_LOG_FUNCTION (this << m_ipv4->GetAddress (i, 0).GetLocal ());
+  Ptr<Ipv4L3Protocol> l3 = m_ipv4->GetObject<Ipv4L3Protocol> ();
+  if (l3->GetNAddresses (i) > 1)
+    {
+      NS_LOG_WARN ("BSDVR does not work with more then one address per each interface.");
+    }
+  Ipv4InterfaceAddress iface = l3->GetAddress (i,0);
+  if (iface.GetLocal () == Ipv4Address ("127.0.0.1"))
+    {
+      return;
+    }
+  // Create a socket to listen only on this interface
+  Ptr<Socket> socket = Socket::CreateSocket (GetObject<Node> (),UdpSocketFactory::GetTypeId ());
+  NS_ASSERT (socket != 0);
+  socket->SetRecvCallback (MakeCallback (&RoutingProtocol::RecvBsdv, this));
+  socket->BindToNetDevice (l3->GetNetDevice (i));
+  socket->Bind (InetSocketAddress (iface.GetLocal (), BSDVR_PORT));
+  socket->SetAllowBroadcast (true);
+  socket->SetIpRecvTtl (true);
+  m_socketAddresses.insert (std::make_pair (socket, iface));
+  
+  /// NOTE: See if subnet broadcast socket required here
+
+  // Add local broadcast record to the routing table
+  Ptr<NetDevice> dev = m_ipv4->GetNetDevice (m_ipv4->GetInterfaceForAddress (iface.GetLocal ()));
+  RoutingTableEntry rt(/*device=*/ dev, /*dst=*/ iface.GetBroadcast (), /*iface=*/ iface, 
+                       /*hops=*/ 1, /*next hop=*/ iface.GetBroadcast (), /*changedEntries*/ false);
+  std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
+  m_routingTable.AddRoute (rt, ft);
+  
+  if (l3->GetInterface (i)->GetArpCache ())
+    {
+      m_nb.AddArpCache (l3->GetInterface (i)->GetArpCache ());
+    }
+   // Allow neighbor manager use this interface for layer 2 feedback if possible
+   Ptr<WifiNetDevice> wifi = dev->GetObject<WifiNetDevice> ();
+   if (wifi == 0)
+    {
+      return;
+    }
+   Ptr<WifiMac> mac = wifi->GetMac ();
+   if (mac == 0)
+    {
+      return;
+    }
+
+  mac->TraceConnectWithoutContext ("DroppedMpdu", MakeCallback (&RoutingProtocol::NotifyTxError, this));
+}
+void 
+RoutingProtocol::NotifyTxError (WifiMacDropReason reason, Ptr<const WifiMacQueueItem> mpdu)
+{
+  m_nb.GetTxErrorCallback ()(mpdu->GetHeader ());
 }
 void 
 RoutingProtocol::NotifyInterfaceDown (uint32_t interface)
@@ -307,14 +420,26 @@ void
 RoutingProtocol::NotifyRemoveAddress (uint32_t interface, Ipv4InterfaceAddress address)
 {
 }
-void 
-RoutingProtocol::SetIpv4 (Ptr<Ipv4> ipv4)
-{
-}
 void
 RoutingProtocol::HelloTimerExpire ()
 {
 }
+bool
+RoutingProtocol::IsMyOwnAddress (Ipv4Address src)
+{
+  return false;
+}
+//-----------------------------------------------------------------------------
+
+/*
+ BSDVR Recv Functions
+ */
+
+void 
+RoutingProtocol::RecvBsdv (Ptr<Socket> socket)
+{
+}
+
 //-----------------------------------------------------------------------------
 
 

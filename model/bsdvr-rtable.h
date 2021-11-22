@@ -242,6 +242,14 @@ public:
     return &m_ForwardingTable;
   }
   /**
+   * Get forwarding table
+   * \returns the forwarding table
+   */
+  std::map<Ipv4Address, RoutingTableEntry>* GetForwardingTable ()
+  {
+    return &m_ForwardingTable;
+  }
+  /**
    * Get distance vector table
    * \returns the distance vector table
    */
@@ -255,7 +263,7 @@ public:
    * \param map Ipv4 address to entry map
    * \return true in success
    */
-  bool AddRoute (RoutingTableEntry & r, std::map<Ipv4Address, RoutingTableEntry> & map);
+  bool AddRoute (RoutingTableEntry & r, std::map<Ipv4Address, RoutingTableEntry>* map);
   /**
    * Delete routing table entry with destination address dst, if it exists.
    * \param dst destination address
