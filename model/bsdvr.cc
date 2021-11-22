@@ -119,6 +119,7 @@ RoutingProtocol::RoutingProtocol ()
     m_helloInterval (Seconds (1)),
     m_nb (m_helloInterval),
     m_maxQueueLen (64),
+    m_queue (m_maxQueueLen),
     m_htimer (Timer::CANCEL_ON_DESTROY)
 {
 }
@@ -135,11 +136,11 @@ RoutingProtocol::GetTypeId (void)
                    TimeValue (Seconds (1)),
                    MakeTimeAccessor (&RoutingProtocol::m_helloInterval),
                    MakeTimeChecker ())
-    // .AddAttribute ("MaxQueueLen", "Maximum number of packets that we allow a routing protocol to buffer.",
-    //                UintegerValue (64),
-    //                MakeUintegerAccessor (&RoutingProtocol::SetMaxQueueLen,
-    //                                      &RoutingProtocol::GetMaxQueueLen),
-    //                MakeUintegerChecker<uint32_t> ())
+    .AddAttribute ("MaxQueueLen", "Maximum number of packets that we allow a routing protocol to buffer.",
+                   UintegerValue (64),
+                   MakeUintegerAccessor (&RoutingProtocol::SetMaxQueueLen,
+                                         &RoutingProtocol::GetMaxQueueLen),
+                   MakeUintegerChecker<uint32_t> ())
     .AddAttribute ("EnableHello", "Indicates whether a hello messages enable.",
                    BooleanValue (true),
                    MakeBooleanAccessor (&RoutingProtocol::SetHelloEnable,
@@ -154,6 +155,12 @@ RoutingProtocol::GetTypeId (void)
   return tid;
 }
 
+void
+RoutingProtocol::SetMaxQueueLen (uint32_t len)
+{
+  m_maxQueueLen = len;
+  m_queue.SetMaxQueueLen (len);
+}
 RoutingProtocol::~RoutingProtocol ()
 {
 }
@@ -268,6 +275,16 @@ RoutingProtocol::RouteOutput (Ptr<Packet> p, const Ipv4Header &header,
     }
   return LoopbackRoute (header, oif);
 }
+// void 
+// DeferredRouteOutput (Ptr<const Packet> p, const Ipv4Header & header, 
+//                      UnicastForwardCallback ucb, ErrorCallback ecb)
+// {
+//   NS_LOG_FUNCTION (this << p << header);
+//   NS_ASSERT (p != 0 && p != Ptr<Packet> ());
+//   QueueEntry newEntry (p, header, ucb, ecb);
+//   bool result = m_queue.Enqueue (newEntry);
+
+// }
 bool 
 RoutingProtocol::RouteInput (Ptr<const Packet> p, const Ipv4Header &header, Ptr<const NetDevice> idev, UnicastForwardCallback ucb, 
                    MulticastForwardCallback mcb, LocalDeliverCallback lcb, ErrorCallback ecb)

@@ -4,6 +4,7 @@
 
 #include "bsdvr-constants.h"
 #include "bsdvr-rtable.h"
+#include "bsdvr-rqueue.h"
 #include "bsdvr-packet.h"
 #include "bsdvr-neighbor.h"
 #include "ns3/node.h"
@@ -50,6 +51,19 @@ public:
   virtual void SetIpv4 (Ptr<Ipv4> ipv4);
   virtual void PrintRoutingTable (Ptr<OutputStreamWrapper> stream, Time::Unit unit = Time::S) const;
   
+  /**
+   * Get the maximum queue length
+   * \returns the maximum queue length
+   */
+  uint32_t GetMaxQueueLen () const
+  {
+    return m_maxQueueLen;
+  }
+  /**
+   * Set the maximum queue length
+   * \param len the maximum queue length
+   */
+  void SetMaxQueueLen (uint32_t len);
   /**
    * Set hello enable
    * \param f the hello enable flag
@@ -112,8 +126,6 @@ private:
   Ptr<NetDevice> m_lo;
   /// Routing table
   RoutingTable m_routingTable;
-  /// A "drop-front" queue used by the routing layer with binary state precedence rules to buffer packets to which it does not have a route.
-  //PacketQueue m_queue;
   /// Indicates whether a hello messages enable
   bool m_enableHello;
   /**
@@ -125,6 +137,8 @@ private:
   Neighbors m_nb;
   /// The maximum number of packets that we allow a routing protocol to buffer
   uint32_t m_maxQueueLen;
+  /// A "drop-front" queue used by the routing layer with binary state precedence rules to buffer packets to which it does not have a route.
+  BsdvrQueue m_queue;
 
 private:
   /// Start protocol operation
