@@ -138,20 +138,20 @@ RoutingTable::SetEntryState (Ipv4Address id, RouteState state, std::map<Ipv4Addr
   return true;
 }
 void
-RoutingTable::DeleteAllRoutesFromInterface (Ipv4InterfaceAddress iface, std::map<Ipv4Address, RoutingTableEntry> & map)
+RoutingTable::DeleteAllRoutesFromInterface (Ipv4InterfaceAddress iface, std::map<Ipv4Address, RoutingTableEntry>* map)
 {
   NS_LOG_FUNCTION (this);
-  if (map.empty ())
+  if (map->empty ())
     {
       return;
     }
-  for (std::map<Ipv4Address, RoutingTableEntry>::iterator i = map.begin (); i != map.end ();)
+  for (std::map<Ipv4Address, RoutingTableEntry>::iterator i = map->begin (); i != map->end ();)
     {
       if (i->second.GetInterface () == iface)
         {
           std::map<Ipv4Address, RoutingTableEntry>::iterator tmp = i;
           ++i;
-          map.erase (tmp);
+          map->erase (tmp);
         }
       else
         {

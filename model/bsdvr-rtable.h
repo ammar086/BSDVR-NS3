@@ -250,6 +250,14 @@ public:
     return &m_ForwardingTable;
   }
   /**
+   * Get forwarding table
+   * \returns the forwarding table
+   */
+  std::map<Ipv4Address, RoutingTableEntry>* GetForwardingTable ()
+  {
+    return &m_ForwardingTable;
+  }
+  /**
    * Get distance vector table
    * \returns the distance vector table
    */
@@ -299,7 +307,7 @@ public:
    * \param iface the interface
    * \param map Ipv4 address to entry map
    */
-  void DeleteAllRoutesFromInterface (Ipv4InterfaceAddress iface, std::map<Ipv4Address, RoutingTableEntry> & map);
+  void DeleteAllRoutesFromInterface (Ipv4InterfaceAddress iface, std::map<Ipv4Address, RoutingTableEntry>* map);
   /// Delete all entries from routing table
   void Clear () 
   { 
