@@ -32,24 +32,24 @@ public:
    * \brief Get the type ID.
    * \return the object TypeId
    */
-  static TypeId GetTypeId (void);
+  /*Done*/static TypeId GetTypeId (void);
   static const u_int32_t BSDVR_PORT;
 
   /// constructor
-  RoutingProtocol ();
-  virtual ~RoutingProtocol ();
-  virtual void DoDispose ();
+  /*Done*/RoutingProtocol ();
+  /*Done*/virtual ~RoutingProtocol ();
+  /*Done*/virtual void DoDispose ();
 
   // Inherited from Ipv4RoutingProtocol
-  Ptr<Ipv4Route> RouteOutput (Ptr<Packet> p, const Ipv4Header &header, Ptr<NetDevice> oif, Socket::SocketErrno &sockerr);
+  /*Done*/Ptr<Ipv4Route> RouteOutput (Ptr<Packet> p, const Ipv4Header &header, Ptr<NetDevice> oif, Socket::SocketErrno &sockerr);
   bool RouteInput (Ptr<const Packet> p, const Ipv4Header &header, Ptr<const NetDevice> idev, UnicastForwardCallback ucb, 
                    MulticastForwardCallback mcb, LocalDeliverCallback lcb, ErrorCallback ecb);
-  virtual void NotifyInterfaceUp (uint32_t interface);
-  virtual void NotifyInterfaceDown (uint32_t interface);
-  virtual void NotifyAddAddress (uint32_t interface, Ipv4InterfaceAddress address);
-  virtual void NotifyRemoveAddress (uint32_t interface, Ipv4InterfaceAddress address);
-  virtual void SetIpv4 (Ptr<Ipv4> ipv4);
-  virtual void PrintRoutingTable (Ptr<OutputStreamWrapper> stream, Time::Unit unit = Time::S) const;
+  /*Done*/virtual void NotifyInterfaceUp (uint32_t interface);
+  /*Done*/virtual void NotifyInterfaceDown (uint32_t interface);
+  /*Done*/virtual void NotifyAddAddress (uint32_t interface, Ipv4InterfaceAddress address);
+  /*Done*/virtual void NotifyRemoveAddress (uint32_t interface, Ipv4InterfaceAddress address);
+  /*Done*/virtual void SetIpv4 (Ptr<Ipv4> ipv4);
+  /*Done*/virtual void PrintRoutingTable (Ptr<OutputStreamWrapper> stream, Time::Unit unit = Time::S) const;
   
   /**
    * Get the maximum queue length
@@ -63,7 +63,7 @@ public:
    * Set the maximum queue length
    * \param len the maximum queue length
    */
-  void SetMaxQueueLen (uint32_t len);
+  /*Done*/void SetMaxQueueLen (uint32_t len);
   /**
    * Set hello enable
    * \param f the hello enable flag
@@ -89,8 +89,8 @@ public:
    * \param stream first stream index to use
    * \return the number of stream indices assigned by this model
    */
-  int64_t AssignStreams (int64_t stream);
-
+  /*Done*/int64_t AssignStreams (int64_t stream);
+  /// NOTE: Remove these dummy functions
   bool isBetterRoute2 (RoutingTableEntry & r1, RoutingTableEntry & r2)
   {
     return isBetterRoute (r1,r2);
@@ -102,7 +102,7 @@ public:
   }
 
 protected:
-  virtual void DoInitialize (void);
+  /*Done*/virtual void DoInitialize (void);
 private:
   /**
    * Notify that an MPDU was dropped.
@@ -110,7 +110,7 @@ private:
    * \param reason the reason why the MPDU was dropped
    * \param mpdu the dropped MPDU
    */
-  void NotifyTxError (WifiMacDropReason reason, Ptr<const WifiMacQueueItem> mpdu);
+  /*Done*/void NotifyTxError (WifiMacDropReason reason, Ptr<const WifiMacQueueItem> mpdu);
 
   // Protocol parameters
   /// Nodes IP address
@@ -150,7 +150,7 @@ private:
    * \param ucb the UnicastForwardCallback function
    * \param ecb the ErrorCallback function
    */
-  void DeferredRouteOutput (Ptr<const Packet> p, const Ipv4Header & header, UnicastForwardCallback ucb, ErrorCallback ecb);
+  /*Done*/void DeferredRouteOutput (Ptr<const Packet> p, const Ipv4Header & header, UnicastForwardCallback ucb, ErrorCallback ecb);
   /**
    * If route exists and is valid, forward packet.
    * \param p the packet to route
@@ -165,14 +165,14 @@ private:
    * \param src the source IP address
    * \returns true if the IP address is the node's IP address
    */
-  bool IsMyOwnAddress (Ipv4Address src);
+  /*Done*/bool IsMyOwnAddress (Ipv4Address src);
   /**
    * Find unicast socket with local interface address iface
    *
    * \param iface the interface
    * \returns the socket associated with the interface
    */
-  Ptr<Socket> FindSocketWithInterfaceAddress (Ipv4InterfaceAddress iface) const;
+  /*Done*/Ptr<Socket> FindSocketWithInterfaceAddress (Ipv4InterfaceAddress iface) const;
   /**
    * Find subnet directed broadcast socket with local interface address iface
    *
@@ -256,33 +256,35 @@ private:
 
   /// BSDVR Control Plane Functions
 
-  bool isBetterRoute (RoutingTableEntry & r1, RoutingTableEntry & r2);
+  /*Done*/bool isBetterRoute (RoutingTableEntry & r1, RoutingTableEntry & r2);
   /**
    * Remove alternative routes from DVT to avoid fake routes - [doesnot remove direct neighbor routes]
    * \param nxtHp nexthop's address
    * \param rt  new entry with destination address dst
    */
-  void RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt); 
+  /*Done*/void RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt); 
   /**
    * Update existing routes in DVT or add new routes
    * \param nxtHp nexthop's address
    * \param rt  new entry with destination address dst
    */
-  void UpdateDistanceVectorTable (Ipv4Address nxtHp, RoutingTableEntry & rt); 
+  /*Done*/void UpdateDistanceVectorTable (Ipv4Address nxtHp, RoutingTableEntry & rt); 
   /**
    * Update changes in existing routes from updated DVT
    * \param dst destination address
    * \param nxtHp nexthop's address
    */
-  void RefreshForwardingTable (Ipv4Address dst, Ipv4Address nxtHp);
+  /*Done*/void RefreshForwardingTable (Ipv4Address dst, Ipv4Address nxtHp);
    /**
    * Replace existing routes with by alternative routes from updated DVT if any
    * \returns a list of newly installed routes in FT to broadcast to neighbors
    */
-  std::list<Ipv4Address> ComputeForwardingTable ();
+  /*Done*/std::list<Ipv4Address> ComputeForwardingTable ();
 
   /// Provides uniform random variables.
   Ptr<UniformRandomVariable> m_uniformRandomVariable;
+  /// Keep track of the last bcast time
+  Time m_lastBcastTime;
 
 };
 }  // namespace bsdvr
