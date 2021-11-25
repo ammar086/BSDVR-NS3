@@ -250,7 +250,7 @@ private:
    * \param updtHeader route update header
    * \param toOrigin routing table entry to originator
    */
-  void SendUpdate (UpdateHeader const & updtHeader, RoutingTableEntry const & toOrigin);
+  void SendUpdate (RoutingTableEntry const & rt, Ipv4Address const & dst);
   /** Send Updates when link fails with neighbor
    * \param neighbor the neighbor node
    */

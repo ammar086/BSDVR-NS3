@@ -559,7 +559,12 @@ RoutingProtocol::NotifyInterfaceUp (uint32_t i)
                        /*hops=*/ 1, /*next hop=*/ iface.GetBroadcast (), /*changedEntries*/ false);
   std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
   m_routingTable.AddRoute (rt, ft);
-  
+  if (m_mainAddress == Ipv4Address ())
+    {
+      m_mainAddress = iface.GetLocal ();
+    }
+  NS_ASSERT (m_mainAddress != Ipv4Address ());
+
   if (l3->GetInterface (i)->GetArpCache ())
     {
       m_nb.AddArpCache (l3->GetInterface (i)->GetArpCache ());
@@ -675,6 +680,12 @@ RoutingProtocol::NotifyAddAddress (uint32_t i, Ipv4InterfaceAddress address)
                               /*hops=*/ 1, /*next hop=*/ iface.GetBroadcast (), /*changedEntries*/ false);
           std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
           m_routingTable.AddRoute (rt, ft);
+
+          ///NOTE: assuming this is the point a new connection is setup between two nodes to 
+          ///      perform the initial exchange of distance vectors. (SYN + SYN-ACK)
+          /// call UpdateDVT
+          /// call computeFT
+          /// call broadcast
         }
     }
   else
@@ -955,6 +966,120 @@ RoutingProtocol::RecvUpdate (Ptr<Packet> p, Ipv4Address my, Ipv4Address src)
   /// NOTE: Add Broadcast changes function here
   /// NOTE: Add Re-Transmit current entry function here 
 
+      Ptr<Ipv4L3Protocol> l3 = m_ipv4->GetObject<Ipv4L3Protocol> ();
+      if (l3->GetNAddresses (i))
+        {
+          Ipv4InterfaceAddress iface = l3->GetAddress (i, 0);
+          // Create a socket to listen only on this interface
+          Ptr<Socket> socket = Socket::CreateSocket (GetObject<Node> (), 
+                                                     UdpSocketFactory::GetTypeId ());
+          NS_ASSERT (socket != 0);
+          socket->SetRecvCallback (MakeCallback (&RoutingProtocol::RecvBsdv, this));
+          // Bind to any IP address so that broadcasts can be received
+          socket->BindToNetDevice (l3->GetNetDevice (i));
+          socket->Bind (InetSocketAddress (iface.GetLocal (), BSDVR_PORT));
+          socket->SetAllowBroadcast (true);
+          m_socketAddresses.insert (std::make_pair (socket,iface));
+          
+          /// NOTE: See if subnet broadcast socket required here
+          socket = Socket::CreateSocket (GetObject<Node> (),
+                                         UdpSocketFactory::GetTypeId ());
+          NS_ASSERT (socket != 0);
+          socket->SetRecvCallback (MakeCallback (&RoutingProtocol::RecvBsdv, this));
+          socket->BindToNetDevice (l3->GetNetDevice (i));
+          socket->Bind (InetSocketAddress (iface.GetBroadcast (), BSDVR_PORT));
+          socket->SetAllowBroadcast (true);
+          socket->SetIpRecvTtl (true);
+          m_socketSubnetBroadcastAddresses.insert (std::make_pair (socket, iface));
+
+          // Add local broadcast record to the routing table
+          Ptr<NetDevice> dev = m_ipv4->GetNetDevice (m_ipv4->GetInterfaceForAddress (iface.GetLocal ()));
+          RoutingTableEntry rt(/*device=*/ dev, /*dst=*/ iface.GetBroadcast (), /*iface=*/ iface, 
+                              /*hops=*/ 1, /*next hop=*/ iface.GetBroadcast (), /*changedEntries*/ false);
+          std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
+          m_routingTable.AddRoute (rt, ft);
+        }
+      if (m_socketAddresses.empty ())
+        {
+          NS_LOG_LOGIC ("No bsdvr interfaces");
+          m_htimer.Cancel ();
+          m_nb.Clear ();
+          m_routingTable.Clear ();
+          return;
+        }
+    }
+  else
+    {
+      NS_LOG_LOGIC ("Remove address not participating in BSDVR operation");
+    }
+}
+bool
+RoutingProtocol::IsMyOwnAddress (Ipv4Address src)
+{
+  NS_LOG_FUNCTION (this << src);
+  for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::const_iterator j =
+         m_socketAddresses.begin (); j != m_socketAddresses.end (); ++j)
+    {
+      Ipv4InterfaceAddress iface = j->second;
+      if (src == iface.GetLocal ())
+        {
+          return true;
+        }
+    }
+  return false;
+}
+void
+RoutingProtocol::HelloTimerExpire ()
+{
+  NS_LOG_FUNCTION (this);
+  Time offset = Time (Seconds (0));
+  if (m_lastBcastTime > Time (Seconds (0)))
+    {
+      offset = Simulator::Now () - m_lastBcastTime;
+      NS_LOG_DEBUG ("Hello deferred due to last bcast at:" << m_lastBcastTime);
+    }
+  else
+    {
+      SendHello ();
+    }
+  m_htimer.Cancel ();
+  Time diff = m_helloInterval - offset;
+  m_htimer.Schedule (std::max (Time (Seconds (0)), diff));
+  m_lastBcastTime = Time (Seconds (0));
+}
+Ptr<Socket> 
+RoutingProtocol::FindSocketWithInterfaceAddress (Ipv4InterfaceAddress addr) const
+{
+  NS_LOG_FUNCTION (this << addr);
+  for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::const_iterator j =
+         m_socketAddresses.begin (); j != m_socketAddresses.end (); ++j)
+    {
+      Ptr<Socket> socket = j->first;
+      Ipv4InterfaceAddress iface = j->second;
+      if (iface == addr)
+        {
+          return socket;
+        }
+    }
+  Ptr<Socket> socket;
+  return socket;
+}
+Ptr<Socket>
+RoutingProtocol::FindSubnetBroadcastSocketWithInterfaceAddress (Ipv4InterfaceAddress addr ) const
+{
+  NS_LOG_FUNCTION (this << addr);
+  for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::const_iterator j =
+         m_socketSubnetBroadcastAddresses.begin (); j != m_socketSubnetBroadcastAddresses.end (); ++j)
+    {
+      Ptr<Socket> socket = j->first;
+      Ipv4InterfaceAddress iface = j->second;
+      if (iface == addr)
+        {
+          return socket;
+        }
+    }
+  Ptr<Socket> socket;
+  return socket;
 }
 
 //-----------------------------------------------------------------------------
@@ -1019,8 +1144,27 @@ RoutingProtocol::SendPacketFromQueue (Ipv4Address dst, Ptr<Ipv4Route> route)
     }
 }
 void 
-RoutingProtocol::SendUpdate (UpdateHeader const & updtHeader, RoutingTableEntry const & toOrigin)
+RoutingProtocol::SendUpdate (/*ft entry=*/ RoutingTableEntry const & rt, /*neighbor*/Ipv4Address const & ne)
 {
+  NS_LOG_FUNCTION (this << rt.GetDestination ());
+  ///NOTE: set packet header value over here
+  u_int32_t hops = rt.GetHop ();
+  Ipv4Address dst = rt.GetDestination ();
+  Ipv4Address origin = rt.GetInterface ().GetLocal ();
+  uint32_t state = (rt.GetRouteState () == ACTIVE) ? 1 : 0;
+
+  UpdateHeader uptHeader (/*origin*/origin, /*dst*/dst, /*hops*/hops, /*state*/state);
+  
+  Ptr<Packet> packet =  Create<Packet> ();
+  SocketIpTtlTag tag;
+  tag.SetTtl (rt.GetHop ());
+  packet->AddPacketTag (tag);
+  packet->AddHeader (uptHeader);
+  TypeHeader tHeader (BSDVRTYPE_UPDATE);
+  packet->AddHeader (tHeader);
+  Ptr<Socket> socket = FindSocketWithInterfaceAddress (rt.GetInterface ());
+  NS_ASSERT (socket);
+  socket->SendTo (packet, 0, InetSocketAddress (rt.GetNextHop (), BSDVR_PORT));
 }
 void 
 RoutingProtocol::SendUpdateOnLinkFailure (Ipv4Address nextHop)
@@ -1281,907 +1425,7 @@ RoutingProtocol::ComputeForwardingTable ()
             }
         }
       }
-  changes.remove (m_mainAddress);
-  return changes;
-}
-
-}  // namespace bsdvr
-}  // namespace ns3
-
-TypeId
-RoutingProtocol::GetTypeId (void)
-{
-  static TypeId tid = TypeId ("ns3::bsdvr::RoutingProtocol")
-    //FIXME: Add attributes for data plane packet buffer and control plane pending reply buffer
-    .SetParent<Ipv4RoutingProtocol> ()
-    .SetGroupName ("Bsdvr")
-    .AddConstructor<RoutingProtocol> ()
-    .AddAttribute ("HelloInterval", "HELLO messages emission interval.",
-                   TimeValue (Seconds (1)),
-                   MakeTimeAccessor (&RoutingProtocol::m_helloInterval),
-                   MakeTimeChecker ())
-    .AddAttribute ("MaxQueueLen", "Maximum number of packets that we allow a routing protocol to buffer.",
-                   UintegerValue (64),
-                   MakeUintegerAccessor (&RoutingProtocol::SetMaxQueueLen,
-                                         &RoutingProtocol::GetMaxQueueLen),
-                   MakeUintegerChecker<uint32_t> ())
-    .AddAttribute ("EnableHello", "Indicates whether a hello messages enable.",
-                   BooleanValue (true),
-                   MakeBooleanAccessor (&RoutingProtocol::SetHelloEnable,
-                                        &RoutingProtocol::GetHelloEnable),
-                   MakeBooleanChecker ())
-    .AddAttribute ("UniformRv",
-                   "Access to the underlying UniformRandomVariable",
-                   StringValue ("ns3::UniformRandomVariable"),
-                   MakePointerAccessor (&RoutingProtocol::m_uniformRandomVariable),
-                   MakePointerChecker<UniformRandomVariable> ())
-    ;
-  return tid;
-}
-
-void
-RoutingProtocol::SetMaxQueueLen (uint32_t len)
-{
-  m_maxQueueLen = len;
-  m_queue.SetMaxQueueLen (len);
-}
-RoutingProtocol::~RoutingProtocol ()
-{
-}
-
-void
-RoutingProtocol::DoDispose ()
-{
-  m_ipv4 = 0;
-  for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::iterator iter = 
-       m_socketAddresses.begin (); iter != m_socketAddresses.end (); iter++)
-     {
-       iter->first->Close ();
-     }
-  m_socketAddresses.clear ();
-  Ipv4RoutingProtocol::DoDispose ();
-}
-
-void 
-RoutingProtocol::PrintRoutingTable (Ptr<OutputStreamWrapper> stream, Time::Unit unit) const
-{
-  *stream->GetStream () << "Node: " << m_ipv4->GetObject<Node> ()->GetId ()
-                        << "; Time: " << Now ().As (unit)
-                        << ", Local time: " << m_ipv4->GetObject<Node> ()->GetLocalTime ().As (unit)
-                        << ", BSDVR Routing table" << std::endl;
-  std::map<Ipv4Address, RoutingTableEntry> ft = m_routingTable.GetForwardingTablePrint ();                 
-  m_routingTable.Print (&ft, stream, unit);
-  *stream->GetStream () << std::endl;
-}
-
-int64_t 
-RoutingProtocol::AssignStreams (int64_t stream)
-{
-  NS_LOG_FUNCTION (this << stream);
-  m_uniformRandomVariable->SetStream (stream);
-  return 1;
-}
-
-void
-RoutingProtocol::DoInitialize (void)
-{
-  NS_LOG_FUNCTION (this);
-  uint32_t startTime;
-  if (m_enableHello)
-    {
-      m_htimer.SetFunction (&RoutingProtocol::HelloTimerExpire, this);
-      startTime = m_uniformRandomVariable->GetInteger (0, 100);
-      NS_LOG_DEBUG ("Starting at time " << startTime << "ms");
-      m_htimer.Schedule (MilliSeconds (startTime));
-    }
-  Ipv4RoutingProtocol::DoInitialize ();
-}
-
-void 
-RoutingProtocol::Start ()
-{
-  NS_LOG_FUNCTION (this);
-  if (m_enableHello)
-    {
-      m_nb.ScheduleTimer ();
-    }
-}
-
-Ptr<Ipv4Route> 
-RoutingProtocol::LoopbackRoute (const Ipv4Header & hdr, Ptr<NetDevice> oif) const
-{
-  NS_LOG_FUNCTION (this << hdr);
-  NS_ASSERT (m_lo != 0);
-  Ptr<Ipv4Route> rt = Create<Ipv4Route> ();
-  rt->SetDestination (hdr.GetDestination ());
-  //
-  // Source address selection here is tricky.  The loopback route is
-  // returned when BSDVR does not have a route; this causes the packet
-  // to be looped back and handled (cached) in RouteInput() method
-  // while a route is found. However, connection-oriented protocols
-  // like TCP need to create an endpoint four-tuple (src, src port,
-  // dst, dst port) and create a pseudo-header for checksumming.  So,
-  // BSDVR needs to guess correctly what the eventual source address
-  // will be.
-  //
-  // For single interface, single address nodes, this is not a problem.
-  // When there are possibly multiple outgoing interfaces, the policy
-  // implemented here is to pick the first available BSDVR interface.
-  // If RouteOutput() caller specified an outgoing interface, that
-  // further constrains the selection of source address
-  //
-  std::map<Ptr<Socket>, Ipv4InterfaceAddress>::const_iterator j = m_socketAddresses.begin ();
-  if (oif)
-    {
-      // Iterate to find an address on the oif device
-      for (j = m_socketAddresses.begin (); j != m_socketAddresses.end (); ++j)
-        {
-          Ipv4Address addr = j->second.GetLocal ();
-          int32_t interface = m_ipv4->GetInterfaceForAddress (addr);
-          if (oif == m_ipv4->GetNetDevice (static_cast<uint32_t> (interface)))
-            {
-              rt->SetSource (addr);
-              break;
-            }
-        }
-    }
-  else
-    {
-      rt->SetSource (j->second.GetLocal ());
-    }
-  NS_ASSERT_MSG (rt->GetSource () != Ipv4Address (), "Valid BSDVR source address not found");
-  rt->SetGateway (Ipv4Address ("127.0.0.1"));
-  rt->SetOutputDevice (m_lo);
-  return rt;
-}
-
-Ptr<Ipv4Route> 
-RoutingProtocol::RouteOutput (Ptr<Packet> p, const Ipv4Header &header, 
-                              Ptr<NetDevice> oif, Socket::SocketErrno &sockerr)
-{
-  NS_LOG_FUNCTION (this << header << (oif ? oif->GetIfIndex () : 0));
-  if (!p)
-    {
-      NS_LOG_DEBUG ("Packet is == 0");
-      return LoopbackRoute (header, oif);
-    }
-  if (m_socketAddresses.empty ())
-    {
-      sockerr = Socket::ERROR_NOROUTETOHOST;
-      NS_LOG_LOGIC ("No bsdvr interfaces");
-      Ptr<Ipv4Route> route;
-      return route;
-    }
-  sockerr = Socket::ERROR_NOTERROR;
-  Ptr<Ipv4Route> route;
-  Ipv4Address dst = header.GetDestination ();
-  RoutingTableEntry rt;
-  std::map<Ipv4Address, RoutingTableEntry> *ft = m_routingTable.GetForwardingTable (); 
-  if (m_routingTable.LookupRoute(dst, rt, ft))
-    {
-      route = rt.GetRoute ();
-      NS_ASSERT (route != 0);
-      NS_LOG_DEBUG ("Exist route to " << route->GetDestination () << " from interface " << route->GetSource ());
-      if (oif != 0 && route->GetOutputDevice () != oif)
-        {
-          NS_LOG_DEBUG ("Output device doesn't match. Dropped.");
-          sockerr = Socket::ERROR_NOROUTETOHOST;
-          return Ptr<Ipv4Route> ();
-        }
-      return route;
-    }
-  // Valid route not found, in this case we return loopback.
-  // routed to loopback, received from loopback and passed to RouteInput (see below)
-  uint32_t iif = (oif ? m_ipv4->GetInterfaceForDevice (oif) : -1);
-  DeferredRouteOutputTag tag (iif);
-  NS_LOG_DEBUG ("Valid Route not found");
-  if (!p->PeekPacketTag (tag))
-    {
-      p->AddPacketTag (tag);
-    }
-  return LoopbackRoute (header, oif);
-}
-
-void 
-RoutingProtocol::DeferredRouteOutput (Ptr<const Packet> p, const Ipv4Header & header, 
-                     UnicastForwardCallback ucb, ErrorCallback ecb)
-{
-  NS_LOG_FUNCTION (this << p << header);
-  NS_ASSERT (p != 0 && p != Ptr<Packet> ());
-  QueueEntry newEntry (p, Status(), header, ucb, ecb);
-  bool result = m_queue.Enqueue (newEntry);
-  if (result)
-    {
-      NS_LOG_LOGIC ("Added packet " << p->GetUid () << " to queue");
-    }
-}
-
-bool 
-RoutingProtocol::RouteInput (Ptr<const Packet> p, const Ipv4Header &header, Ptr<const NetDevice> idev, UnicastForwardCallback ucb, 
-                   MulticastForwardCallback mcb, LocalDeliverCallback lcb, ErrorCallback ecb)
-{
-  NS_LOG_FUNCTION (this << " received packet " << p->GetUid ()
-                        << " from " << header.GetSource ()
-                        << " on interface " << idev->GetAddress ()
-                        << " to destination " << header.GetDestination ());
-  if (m_socketAddresses.empty ())
-    {
-      NS_LOG_LOGIC ("No Bsdvr interfaces");
-      return false;
-    }
-  NS_ASSERT (m_ipv4 != 0);
-  NS_ASSERT (p != 0);
-  // Check if input device supports IP
-  NS_ASSERT (m_ipv4->GetInterfaceForDevice (idev) >= 0);
-  int32_t iif = m_ipv4->GetInterfaceForDevice (idev);
-
-  Ipv4Address dst = header.GetDestination ();
-  Ipv4Address origin = header.GetSource ();
-
-  // Deferred route request
-  if (idev == m_lo)
-    {
-      DeferredRouteOutputTag tag;
-      if (p->PeekPacketTag (tag))
-        {
-          DeferredRouteOutput (p, header, ucb, ecb);
-          return true;
-        }
-    }
-  // Duplicate of own packet
-  if (IsMyOwnAddress (origin))
-    {
-      return true;
-    }
-  // BSDVR is not a multicast routing protocol
-  if (dst.IsMulticast ())
-    {
-      return false;
-    }
   
-  // Broadcast local delivery/forwarding
-  for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::const_iterator j =
-         m_socketAddresses.begin (); j != m_socketAddresses.end (); ++j)
-    {
-      Ipv4InterfaceAddress iface = j->second;
-      if (m_ipv4->GetInterfaceForAddress (iface.GetLocal ()) == iif)
-        {
-          if (dst == iface.GetBroadcast () || dst.IsBroadcast ())
-            {
-              Ptr<Packet> packet = p->Copy ();
-              if (lcb.IsNull () == false)
-                {
-                  NS_LOG_LOGIC ("Broadcast local delivery to " << iface.GetLocal ());
-                  lcb (p, header, iif);
-                  // Fall through to additional processing
-                }
-              else
-                {
-                  NS_LOG_ERROR ("Unable to deliver packet locally due to null callback " << p->GetUid () << " from " << origin);
-                  ecb (p, header, Socket::ERROR_NOROUTETOHOST);
-                }
-              if (header.GetTtl () > 1)
-                {
-                  NS_LOG_LOGIC ("Forward broadcast. TTL " << (uint16_t) header.GetTtl ());
-                  RoutingTableEntry toBroadcast;
-                  std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
-                  if (m_routingTable.LookupRoute (dst, toBroadcast, ft))
-                    {
-                      Ptr<Ipv4Route> route = toBroadcast.GetRoute ();
-                      ucb (route, packet, header);
-                    }
-                  else
-                    {
-                      NS_LOG_DEBUG ("No route to forward broadcast. Drop packet " << p->GetUid ());
-                    }
-                }
-              else
-                {
-                  NS_LOG_DEBUG ("TTL exceeded. Drop packet " << p->GetUid ());
-                }
-              return true;
-            }
-        }
-    }
-  // Unicast local delivery
-  if (m_ipv4->IsDestinationAddress (dst, iif))
-    {
-      /// NOTE: Confirm if neighbors Update () is required here
-      if (lcb.IsNull () == false)
-        {
-          NS_LOG_LOGIC ("Unicast local delivery to " << dst);
-          lcb (p, header, iif);
-        }
-      else
-        {
-          NS_LOG_ERROR ("Unable to deliver packet locally due to null callback " << p->GetUid () << " from " << origin);
-          ecb (p, header, Socket::ERROR_NOROUTETOHOST);
-        }
-      return true;
-    }
-  // Check if input device supports IP forwarding
-  if (m_ipv4->IsForwarding (iif) == false)
-    {
-      NS_LOG_LOGIC ("Forwarding disabled for this interface");
-      ecb (p, header, Socket::ERROR_NOROUTETOHOST);
-      return true;
-    }
-  // Forwarding
-  return Forwarding (p, header, ucb, ecb);
-}
-bool 
-RoutingProtocol::Forwarding (Ptr<const Packet> p, const Ipv4Header & header, UnicastForwardCallback ucb, ErrorCallback ecb)
-{
-  NS_LOG_FUNCTION (this);
-  Ipv4Address dst = header.GetDestination ();
-  RoutingTableEntry toDst;
-  std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
-  if (m_routingTable.LookupRoute (dst, toDst, ft))
-    {
-      Ptr<Ipv4Route> route = toDst.GetRoute ();
-      NS_LOG_LOGIC (route->GetSource () << "is forwarding packet " << p->GetUid ()
-                                        << " to " << dst
-                                        << " from " << header.GetSource ()
-                                        << " via nexthop neighbor " << toDst.GetNextHop ());
-      
-      /// NOTE: Confirm if neighbors Update () is required here
-
-      ucb (route, p, header);
-      return true;
-    }
-  NS_LOG_DEBUG ("Drop packet " << p->GetUid () << " because no route to forward it.");
-  return false;
-}
-void 
-RoutingProtocol::SetIpv4 (Ptr<Ipv4> ipv4)
-{
-  NS_ASSERT (ipv4 != 0);
-  NS_ASSERT (m_ipv4 == 0);
-  m_ipv4 = ipv4;
-  // Create lo route. It is asserted that the only one interface up for now is loopback
-  NS_ASSERT (m_ipv4->GetNInterfaces () == 1 && m_ipv4->GetAddress (0, 0).GetLocal () == Ipv4Address ("127.0.0.1"));
-  m_lo = m_ipv4->GetNetDevice (0);
-  NS_ASSERT (m_lo != 0);
-  // Remember lo route
-  RoutingTableEntry rt(/*device=*/ m_lo, /*dst=*/ Ipv4Address::GetLoopback (), 
-                       /*iface=*/ Ipv4InterfaceAddress (Ipv4Address::GetLoopback (), Ipv4Mask ("255.0.0.0")), 
-                       /*hops=*/ 1, /*next hop=*/ Ipv4Address::GetLoopback (), /*changedEntries*/ false);
-  std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
-  m_routingTable.AddRoute (rt, ft);
-  Simulator::ScheduleNow (&RoutingProtocol::Start,this);
-}
-void 
-RoutingProtocol::NotifyInterfaceUp (uint32_t i)
-{
-  NS_LOG_FUNCTION (this << m_ipv4->GetAddress (i, 0).GetLocal ());
-  Ptr<Ipv4L3Protocol> l3 = m_ipv4->GetObject<Ipv4L3Protocol> ();
-  if (l3->GetNAddresses (i) > 1)
-    {
-      NS_LOG_WARN ("BSDVR does not work with more then one address per each interface.");
-    }
-  Ipv4InterfaceAddress iface = l3->GetAddress (i,0);
-  if (iface.GetLocal () == Ipv4Address ("127.0.0.1"))
-    {
-      return;
-    }
-  // Create a socket to listen only on this interface
-  Ptr<Socket> socket = Socket::CreateSocket (GetObject<Node> (),UdpSocketFactory::GetTypeId ());
-  NS_ASSERT (socket != 0);
-  socket->SetRecvCallback (MakeCallback (&RoutingProtocol::RecvBsdv, this));
-  socket->BindToNetDevice (l3->GetNetDevice (i));
-  socket->Bind (InetSocketAddress (iface.GetLocal (), BSDVR_PORT));
-  socket->SetAllowBroadcast (true);
-  socket->SetIpRecvTtl (true);
-  m_socketAddresses.insert (std::make_pair (socket, iface));
-  
-  /// NOTE: See if subnet broadcast socket required here
-
-  // Add local broadcast record to the routing table
-  Ptr<NetDevice> dev = m_ipv4->GetNetDevice (m_ipv4->GetInterfaceForAddress (iface.GetLocal ()));
-  RoutingTableEntry rt(/*device=*/ dev, /*dst=*/ iface.GetBroadcast (), /*iface=*/ iface, 
-                       /*hops=*/ 1, /*next hop=*/ iface.GetBroadcast (), /*changedEntries*/ false);
-  std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
-  m_routingTable.AddRoute (rt, ft);
-  
-  if (l3->GetInterface (i)->GetArpCache ())
-    {
-      m_nb.AddArpCache (l3->GetInterface (i)->GetArpCache ());
-    }
-   // Allow neighbor manager use this interface for layer 2 feedback if possible
-   Ptr<WifiNetDevice> wifi = dev->GetObject<WifiNetDevice> ();
-   if (wifi == 0)
-    {
-      return;
-    }
-   Ptr<WifiMac> mac = wifi->GetMac ();
-   if (mac == 0)
-    {
-      return;
-    }
-
-  mac->TraceConnectWithoutContext ("DroppedMpdu", MakeCallback (&RoutingProtocol::NotifyTxError, this));
-}
-void 
-RoutingProtocol::NotifyTxError (WifiMacDropReason reason, Ptr<const WifiMacQueueItem> mpdu)
-{
-  m_nb.GetTxErrorCallback ()(mpdu->GetHeader ());
-}
-void 
-RoutingProtocol::NotifyInterfaceDown (uint32_t i)
-{
-  //Disable layer 2 link state monitoring (if possible)
-  Ptr<Ipv4L3Protocol> l3 = m_ipv4->GetObject<Ipv4L3Protocol> ();
-  Ptr<NetDevice> dev = l3->GetNetDevice (i);
-  Ptr<WifiNetDevice> wifi = dev->GetObject<WifiNetDevice> ();
-  if (wifi != 0)
-    {
-      Ptr<WifiMac> mac = wifi->GetMac ()->GetObject<AdhocWifiMac> ();
-      if (mac != 0)
-        {
-          mac->TraceDisconnectWithoutContext ("DroppedMpdu",
-                                              MakeCallback (&RoutingProtocol::NotifyTxError, this));
-          m_nb.DelArpCache (l3->GetInterface (i)->GetArpCache ());
-        }
-    }
-  // Close socket
-  Ptr<Socket> socket = FindSocketWithInterfaceAddress (m_ipv4->GetAddress (i, 0));
-  NS_ASSERT (socket);
-  socket->Close ();
-  m_socketAddresses.erase (socket);
-  
-  /// NOTE: See if subnet broadcast socket required here
-
-  if (m_socketAddresses.empty ())
-    {
-      NS_LOG_LOGIC ("No bsdvr interfaces");
-      m_htimer.Cancel ();
-      m_nb.Clear ();
-      m_routingTable.Clear (); // clears forwarding table
-      return;
-    }
-  std::map<Ipv4Address, RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
-  m_routingTable.DeleteAllRoutesFromInterface (m_ipv4->GetAddress (i, 0), ft);
-  /// NOTE: Add DeleteAllRoutesFromInterface for DVT over here
-}
-void 
-RoutingProtocol::NotifyAddAddress (uint32_t i, Ipv4InterfaceAddress address)
-{
-  NS_LOG_FUNCTION (this << " interface " << i << " address " << address);
-  Ptr<Ipv4L3Protocol> l3 = m_ipv4->GetObject<Ipv4L3Protocol> ();
-  if (!l3->IsUp (i))
-    {
-      return;
-    }
-  if (l3->GetNAddresses (i) == 1)
-    {
-      Ipv4InterfaceAddress iface = l3->GetAddress (i, 0);
-      Ptr<Socket> socket = FindSocketWithInterfaceAddress (iface);
-      if (!socket)
-        {
-          if (iface.GetLocal () == Ipv4Address ("127.0.0.1"))
-            {
-              return;
-            }
-          // Create a socket to listen only on this interface
-          Ptr<Socket> socket = Socket::CreateSocket (GetObject<Node> (), UdpSocketFactory::GetTypeId ());
-          NS_ASSERT (socket != 0);
-          socket->SetRecvCallback (MakeCallback (&RoutingProtocol::RecvBsdv,this));
-          socket->BindToNetDevice (l3->GetNetDevice (i));
-          socket->Bind (InetSocketAddress (iface.GetLocal (), BSDVR_PORT));
-          socket->SetAllowBroadcast (true);
-          m_socketAddresses.insert (std::make_pair (socket, iface));
-          
-          /// NOTE: See if subnet broadcast socket required here
-
-          // Add local broadcast record to the routing table
-          Ptr<NetDevice> dev = m_ipv4->GetNetDevice (m_ipv4->GetInterfaceForAddress (iface.GetLocal ()));
-          RoutingTableEntry rt(/*device=*/ dev, /*dst=*/ iface.GetBroadcast (), /*iface=*/ iface, 
-                              /*hops=*/ 1, /*next hop=*/ iface.GetBroadcast (), /*changedEntries*/ false);
-          std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
-          m_routingTable.AddRoute (rt, ft);
-        }
-    }
-  else
-    {
-      NS_LOG_LOGIC ("BSDVR does not work with more then one address per each interface. Ignore added address");
-    }
-}
-void 
-RoutingProtocol::NotifyRemoveAddress (uint32_t i, Ipv4InterfaceAddress address)
-{
-  NS_LOG_FUNCTION (this);
-  Ptr<Socket> socket = FindSocketWithInterfaceAddress (address);
-  if (socket)
-    {
-      std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
-      m_routingTable.DeleteAllRoutesFromInterface (address, ft);
-
-      /// NOTE: Add DeleteAllRoutesFromInterface for DVT over here
-
-      socket->Close ();
-      m_socketAddresses.erase (socket);
-
-      /// NOTE: See if subnet broadcast socket required here
-
-      Ptr<Ipv4L3Protocol> l3 = m_ipv4->GetObject<Ipv4L3Protocol> ();
-      if (l3->GetNAddresses (i))
-        {
-          Ipv4InterfaceAddress iface = l3->GetAddress (i, 0);
-          // Create a socket to listen only on this interface
-          Ptr<Socket> socket = Socket::CreateSocket (GetObject<Node> (), UdpSocketFactory::GetTypeId ());
-          NS_ASSERT (socket != 0);
-          socket->SetRecvCallback (MakeCallback (&RoutingProtocol::RecvBsdv, this));
-          // Bind to any IP address so that broadcasts can be received
-          socket->BindToNetDevice (l3->GetNetDevice (i));
-          socket->Bind (InetSocketAddress (iface.GetLocal (), BSDVR_PORT));
-          socket->SetAllowBroadcast (true);
-          m_socketAddresses.insert (std::make_pair (socket,iface));
-          
-          /// NOTE: See if subnet broadcast socket required here
-
-          // Add local broadcast record to the routing table
-          Ptr<NetDevice> dev = m_ipv4->GetNetDevice (m_ipv4->GetInterfaceForAddress (iface.GetLocal ()));
-          RoutingTableEntry rt(/*device=*/ dev, /*dst=*/ iface.GetBroadcast (), /*iface=*/ iface, 
-                              /*hops=*/ 1, /*next hop=*/ iface.GetBroadcast (), /*changedEntries*/ false);
-          std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
-          m_routingTable.AddRoute (rt, ft);
-        }
-      if (m_socketAddresses.empty ())
-        {
-          NS_LOG_LOGIC ("No bsdvr interfaces");
-          m_htimer.Cancel ();
-          m_nb.Clear ();
-          m_routingTable.Clear ();
-          return;
-        }
-    }
-  else
-    {
-      NS_LOG_LOGIC ("Remove address not participating in BSDVR operation");
-    }
-}
-void
-RoutingProtocol::HelloTimerExpire ()
-{
-  NS_LOG_FUNCTION (this);
-  Time offset = Time (Seconds (0));
-  if (m_lastBcastTime > Time (Seconds (0)))
-    {
-      offset = Simulator::Now () - m_lastBcastTime;
-      NS_LOG_DEBUG ("Hello deferred due to last bcast at:" << m_lastBcastTime);
-    }
-  else
-    {
-      SendHello ();
-    }
-  m_htimer.Cancel ();
-  Time diff = m_helloInterval - offset;
-  m_htimer.Schedule (std::max (Time (Seconds (0)), diff));
-  m_lastBcastTime = Time (Seconds (0));
-}
-bool
-RoutingProtocol::IsMyOwnAddress (Ipv4Address src)
-{
-  NS_LOG_FUNCTION (this << src);
-  for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::const_iterator j =
-         m_socketAddresses.begin (); j != m_socketAddresses.end (); ++j)
-    {
-      Ipv4InterfaceAddress iface = j->second;
-      if (src == iface.GetLocal ())
-        {
-          return true;
-        }
-    }
-  return false;
-}
-Ptr<Socket> 
-RoutingProtocol::FindSocketWithInterfaceAddress (Ipv4InterfaceAddress addr) const
-{
-  NS_LOG_FUNCTION (this << addr);
-  for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::const_iterator j =
-         m_socketAddresses.begin (); j != m_socketAddresses.end (); ++j)
-    {
-      Ptr<Socket> socket = j->first;
-      Ipv4InterfaceAddress iface = j->second;
-      if (iface == addr)
-        {
-          return socket;
-        }
-    }
-  Ptr<Socket> socket;
-  return socket;
-}
-
-//-----------------------------------------------------------------------------
-
-/*
- BSDVR Recv Functions
- */
-
-void 
-RoutingProtocol::RecvBsdv (Ptr<Socket> socket)
-{
-}
-void 
-RoutingProtocol::RecvUpdate (Ptr<Packet> p, Ipv4Address my, Ipv4Address src)
-{
-}
-void 
-RoutingProtocol::RecvHello (Ptr<Packet> p, Ipv4Address my, Ipv4Address src)
-{
-}
-
-//-----------------------------------------------------------------------------
-
-/*
- BSDVR Send Functions
- */
-void 
-RoutingProtocol::SendPacketFromQueue (Ipv4Address dst, Ptr<Ipv4Route> route)
-{
-}
-void 
-RoutingProtocol::SendHello ()
-{
-}
-void 
-RoutingProtocol::SendUpdate (UpdateHeader const & updtHeader, RoutingTableEntry const & toOrigin)
-{
-}
-void 
-RoutingProtocol::SendTo (Ptr<Socket> socket, Ptr<Packet> packet, Ipv4Address destination)
-{
-}
-
-//-----------------------------------------------------------------------------
-
-/*
- BSDVR Control Plane Functions
- */
-
-bool 
-RoutingProtocol::isBetterRoute (RoutingTableEntry & r1, RoutingTableEntry & r2)
-{
-  u_int32_t new_hopCount = r2.GetHop ();
-  u_int32_t curr_hopCount = r1.GetHop ();
-  RouteState new_state = r2.GetRouteState ();
-  RouteState curr_state  = r1.GetRouteState ();
-
-  switch (new_state)
-    {
-    case ACTIVE:
-      {
-        if (curr_state == ACTIVE)
-          {
-            return (curr_hopCount <= new_hopCount) ? false : true; 
-          }
-        else if (curr_state == INACTIVE)
-          {
-            return (new_hopCount < bsdvr::constants::BSDVR_THRESHOLD) ? true : false;
-          }
-        break;
-      }
-    case INACTIVE:
-      {
-        if (curr_state == ACTIVE)
-          {
-            return (curr_hopCount <= bsdvr::constants::BSDVR_THRESHOLD) ? false : true; 
-          }
-        else if (curr_state == INACTIVE)
-          {
-            return (curr_hopCount <= new_hopCount) ? false : true;
-          }
-        break;
-      }  
-    }
-   
-  return false;
-}
-
-void 
-RoutingProtocol::RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt)
-{
-  Ipv4Address curr_dst;
-  Ipv4Address curr_nxtHp;
-  RouteState curr_state;
-  std::list<Ipv4Address> fake_dsts;
-  Ipv4Address dst = rt.GetDestination ();
-  //FIXME: Make sure the getter returns a pointer to actual rtable to allow insert and removal of entries
-  std::map<Ipv4Address, RoutingTableEntry> *ft = m_routingTable.GetForwardingTable ();
-  for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = ft->begin (); i != ft->end (); i++)
-    {
-      curr_dst = i->first;
-      curr_nxtHp = i->second.GetNextHop ();
-      curr_state = i->second.GetRouteState ();
-      if (curr_state == ACTIVE && rt.GetRouteState () == INACTIVE)
-        {
-          if (nxtHp == curr_nxtHp && dst == curr_dst)
-            {
-              fake_dsts.push_back (curr_dst);
-            }
-          // TODO: Confirm if neighbor check works right
-          if (nxtHp == dst && m_nb.IsNeighbor (nxtHp))
-            {
-            if (curr_nxtHp == nxtHp && dst != curr_dst)
-              {
-                fake_dsts.push_back (curr_dst);
-              }
-            }
-        }
-    }
-    //FIXME: Make sure the getter returns a pointer to actual rtable to allow insert and removal of entries
-    std::vector<Neighbors::Neighbor> m_neighbors =  m_nb.GetNeighbors();
-    std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > *dvt = m_routingTable.GetDistanceVectorTable ();
-    for (std::vector<Neighbors::Neighbor>::iterator i = m_neighbors.begin ();
-       i != m_neighbors.end (); ++i)
-       {
-         std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >::iterator n_dvt = dvt->find (i->m_neighborAddress);
-         if (n_dvt != dvt->end ())
-           {
-             std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
-             for (std::map<Ipv4Address, RoutingTableEntry>::iterator j = n_dvt_entries->begin (); j != n_dvt_entries->end (); j++)
-                {
-                    for (std::list<Ipv4Address>::iterator k = fake_dsts.begin (); k != fake_dsts.end (); k++)
-                       {
-                         if (*k != j->first)
-                           {
-                             curr_nxtHp = (*ft)[j->first].GetNextHop ();
-                             if (i->m_neighborAddress != curr_nxtHp)
-                               {
-                                 (*dvt)[i->m_neighborAddress]->erase(j->first);
-                               }
-                           }
-                       }
-                }
-           }
-       }   
-}
-
-void 
-RoutingProtocol::UpdateDistanceVectorTable (Ipv4Address nxtHp, RoutingTableEntry & rt)
-{
-  Ipv4Address curr_dst;
-  Ipv4Address curr_nxtHp;
-  Ipv4Address dst = rt.GetDestination ();
-  // Tables
-  std::vector<Neighbors::Neighbor> m_neighbors =  m_nb.GetNeighbors();
-  std::map<Ipv4Address, RoutingTableEntry> *ft = m_routingTable.GetForwardingTable ();
-  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > *dvt = m_routingTable.GetDistanceVectorTable ();
-  // Iterators
-  std::vector<Neighbors::Neighbor>::iterator n;
-  std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
-  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >::iterator n_dvt;
-
-  ft_entry = ft->find (dst);
-  if (ft_entry != ft->end ())
-    {
-      try
-      {
-        RemoveFakeRoutes (nxtHp, rt);
-      }
-      catch(const std::exception& e)
-      {
-        std::cerr << e.what() << '\n';
-      }
-      
-    }
-  //FIXME: Improve search in neighbor vector
-  for (n = m_neighbors.begin (); n != m_neighbors.end (); n++)
-    {
-      if (n->m_neighborAddress == nxtHp)
-        {
-          break;
-        }
-    }
-  n_dvt = (*dvt).find (nxtHp);
-  if (n != m_neighbors.end () && n_dvt != (*dvt).end ())
-    {
-      //NOTE: Assuming all neighbor hopCounts to be 1 so entries won't change will link quality
-      // Do nothing
-    }
-  else
-    {
-      //NOTE: As link quality is assumed constant, no total-cost calc. performed and
-      //check against THRESHOLD value to skip total-cost calc.
-      std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[nxtHp];
-      (*n_dvt_entries)[dst] = rt;
-    } 
-}
-
-void
-RoutingProtocol::RefreshForwardingTable (Ipv4Address dst, Ipv4Address nxtHp)
-{
-  Ipv4Address curr_nxtHp;
-  // Tables
-  std::map<Ipv4Address, RoutingTableEntry> *ft = m_routingTable.GetForwardingTable ();
-  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > *dvt = m_routingTable.GetDistanceVectorTable ();
-  // Iterators
-  std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
-  std::map<Ipv4Address, RoutingTableEntry>::iterator n_dvt_entry;
-  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >::iterator n_dvt;
-
-  n_dvt = (*dvt).find (nxtHp);
-  if (n_dvt != dvt->end ())
-    {
-      std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[nxtHp];
-      n_dvt_entry = n_dvt_entries->find (dst);
-      if (n_dvt_entry != n_dvt_entries->end ())
-        {
-          (*ft)[dst] = n_dvt_entry->second;
-        }
-    }
-  else
-    {
-      (*ft)[dst].SetRouteState (INACTIVE);
-    }
-}
-
-std::list<Ipv4Address> 
-RoutingProtocol::ComputeForwardingTable ()
-{
-  Ipv4Address curr_nxtHp;
-  RoutingTableEntry old_entry;
-  RoutingTableEntry new_entry;
-  RoutingTableEntry curr_entry;
-  std::list<Ipv4Address> changes;
-  // Tables
-  std::vector<Neighbors::Neighbor> m_neighbors =  m_nb.GetNeighbors();
-  std::map<Ipv4Address, RoutingTableEntry> *ft = m_routingTable.GetForwardingTable ();
-  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > *dvt = m_routingTable.GetDistanceVectorTable ();
-  // Iterators
-  std::list<Ipv4Address>::iterator c;
-  std::vector<Neighbors::Neighbor>::iterator n;
-  std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
-  std::map<Ipv4Address, RoutingTableEntry>::iterator n_dvt_entry;
-
-  for (std::vector<Neighbors::Neighbor>::iterator i = m_neighbors.begin ();
-       i != m_neighbors.end (); ++i)
-      {
-        std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
-        for (n_dvt_entry = n_dvt_entries->begin (); n_dvt_entry != n_dvt_entries->end (); n_dvt_entry++)
-        {
-          ft_entry = ft->find (n_dvt_entry->first);
-          if (ft_entry != ft->end ())
-            {
-              try
-              {
-                curr_nxtHp = (*ft)[n_dvt_entry->first].GetNextHop ();
-                old_entry = (*ft)[n_dvt_entry->first];
-                RefreshForwardingTable (n_dvt_entry->first, curr_nxtHp);
-                new_entry = (*(*dvt)[i->m_neighborAddress])[n_dvt_entry->first];
-                curr_entry = (*ft)[n_dvt_entry->first];
-                if (isBetterRoute (new_entry, curr_entry))
-                  {
-                    (*ft)[n_dvt_entry->first] = new_entry;
-                    c = std::find(changes.begin (), changes.end (), n_dvt_entry->first);
-                    if (c != changes.end ())
-                      {
-                        changes.push_back (n_dvt_entry->first);
-                      }
-                  }
-                else if ((curr_entry.GetHop () != old_entry.GetHop ()) || (curr_entry.GetRouteState () != old_entry.GetRouteState ()))
-                  {
-                    c = std::find(changes.begin (), changes.end (), n_dvt_entry->first);
-                    if (c != changes.end ())
-                      {
-                        changes.push_back (n_dvt_entry->first);
-                      }
-                  }
-              }
-              catch(const std::exception& e)
-              {
-                std::cerr << e.what() << '\n';
-              }
-              
-            }
-          else
-            {
-              new_entry = (*(*dvt)[i->m_neighborAddress])[n_dvt_entry->first];
-              (*ft)[n_dvt_entry->first] = new_entry;
-              changes.push_back (n_dvt_entry->first);
-            }
-        }
-      }
   changes.remove (m_mainAddress);
   return changes;
 }
