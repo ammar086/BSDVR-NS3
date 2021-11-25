@@ -80,6 +80,22 @@ public:
   {
     return m_enableHello;
   }
+  /**
+   * Set broadcast enable flag
+   * \param f enable broadcast flag
+   */
+  void SetBroadcastEnable (bool f)
+  {
+    m_enableBroadcast = f;
+  }
+  /**
+   * Get broadcast enable flag
+   * \returns the broadcast enable flag
+   */
+  bool GetBroadcastEnable () const
+  {
+    return m_enableBroadcast;
+  }
 
   /**
    * Assign a fixed random variable stream number to the random variables
@@ -121,13 +137,15 @@ private:
   /// Raw unicast socket per each IP interface, map socket -> iface address (IP + mask)
   std::map< Ptr<Socket>, Ipv4InterfaceAddress > m_socketAddresses;
   /// Raw subnet directed broadcast socket per each IP interface, map socket -> iface address (IP + mask)
-  //std::map< Ptr<Socket>, Ipv4InterfaceAddress > m_socketSubnetBroadcastAddresses;
+  std::map< Ptr<Socket>, Ipv4InterfaceAddress > m_socketSubnetBroadcastAddresses;
   /// Loopback device used to defer route requests until a route is found
   Ptr<NetDevice> m_lo;
   /// Routing table
   RoutingTable m_routingTable;
   /// Indicates whether a hello messages enable
   bool m_enableHello;
+   /// Indicates whether a a broadcast data packets forwarding enable
+  bool m_enableBroadcast;             
   /**
    * Every HelloInterval the node checks whether it has sent a broadcast  within the last HelloInterval.
    * If it has not, it MAY broadcast a  Hello message
@@ -179,7 +197,7 @@ private:
    * \param iface the interface
    * \returns the socket associated with the interface
    */
-  //Ptr<Socket> FindSubnetBroadcastSocketWithInterfaceAddress (Ipv4InterfaceAddress iface) const;
+  Ptr<Socket> FindSubnetBroadcastSocketWithInterfaceAddress (Ipv4InterfaceAddress iface) const;
   /**
    * Process hello message
    * 
@@ -233,6 +251,10 @@ private:
    * \param toOrigin routing table entry to originator
    */
   void SendUpdate (UpdateHeader const & updtHeader, RoutingTableEntry const & toOrigin);
+  /** Send Updates when link fails with neighbor
+   * \param neighbor the neighbor node
+   */
+  void SendUpdateOnLinkFailure (Ipv4Address nextHop);
   /// @}
   
   /**

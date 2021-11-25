@@ -110,11 +110,11 @@ RoutingTable::AddRoute (RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTab
   return result.second;
 }
 bool
-RoutingTable::Update (RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry> & map)
+RoutingTable::Update (RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry>* map)
 {
   NS_LOG_FUNCTION (this);
-  std::map<Ipv4Address, RoutingTableEntry>::iterator i = map.find(rt.GetDestination ());
-  if (i == map.end ())
+  std::map<Ipv4Address, RoutingTableEntry>::iterator i = map->find(rt.GetDestination ());
+  if (i == map->end ())
     {
       NS_LOG_LOGIC ("Route update to " << rt.GetDestination () << " fails; not found");
       return false;
