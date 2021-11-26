@@ -843,7 +843,20 @@ RoutingProtocol::ProcessHello (HelloHeader const & hlHeader, Ipv4Address receive
   RoutingTableEntry toNeighbor;
   std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >* dvt = m_routingTable.GetDistanceVectorTable ();
   /// NOTE: use of find () instead of [] handles index errors better, change at end
-  std::map<Ipv4Address, RoutingTableEntry>* dv = (*dvt)[receiver]; // receiver node's dv
+  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >::iterator dvt_iter;
+  for (dvt_iter = dvt->begin (); dvt_iter != dvt->end(); ++dvt_iter)
+    {
+      if (dvt_iter->first == receiver)
+        {
+          break;
+        }
+    }
+  
+  std::map<Ipv4Address, RoutingTableEntry>* dv = new std::map<Ipv4Address, RoutingTableEntry> ();
+  if (dvt_iter != dvt->end ())
+    {
+      dv = (*dvt)[receiver]; // receiver node's dv
+    }
   if (!m_routingTable.LookupRoute (origin, toNeighbor, dv))
     {
       Ptr<NetDevice> dev = m_ipv4->GetNetDevice (m_ipv4->GetInterfaceForAddress (receiver));
@@ -864,6 +877,7 @@ RoutingProtocol::ProcessHello (HelloHeader const & hlHeader, Ipv4Address receive
     {
       m_nb.Update (origin, Time (m_helloInterval));
     }
+  
 }
 //-----------------------------------------------------------------------------
 
