@@ -7,7 +7,7 @@ namespace ns3 {
 namespace bsdvr {
 namespace constants{
     
-    extern const u_int32_t THRESHOLD {16};
+    const u_int32_t BSDVR_THRESHOLD {16};
 
 }  // namespace constants
 }  // namespace bsdvr

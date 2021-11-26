@@ -11,6 +11,7 @@ def build(bld):
     module.source = [
         'model/bsdvr.cc',
         'model/bsdvr-rtable.cc',
+        'model/bsdvr-rqueue.cc',
         'model/bsdvr-packet.cc',
         'model/bsdvr-neighbor.cc',
         'helper/bsdvr-helper.cc',
@@ -31,6 +32,7 @@ def build(bld):
     headers.source = [
         'model/bsdvr.h',
         'model/bsdvr-rtable.h',
+        'model/bsdvr-rqueue.h',
         'model/bsdvr-packet.h',
         'model/bsdvr-neighbor.h',
         'model/bsdvr-constants.h',
