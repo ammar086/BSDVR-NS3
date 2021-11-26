@@ -117,6 +117,14 @@ public:
   {
     return m_handleLinkFailure;
   }
+  /**
+    * Get list of neighbor entries
+    * \returns list of neighbors
+    */
+  std::vector<Neighbor> GetNeighbors ()
+  {
+    return m_nb;
+  }
 
 private:
   /// link failure callback

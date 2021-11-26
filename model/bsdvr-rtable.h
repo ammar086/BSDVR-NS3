@@ -213,17 +213,25 @@ public:
    * Get forwarding table
    * \returns the forwarding table
    */
-  std::map<Ipv4Address, RoutingTableEntry> GetForwardingTable () const
+  std::map<Ipv4Address, RoutingTableEntry> GetForwardingTablePrint () const
   {
     return m_ForwardingTable;
+  }
+  /**
+   * Get forwarding table
+   * \returns the forwarding table
+   */
+  std::map<Ipv4Address, RoutingTableEntry>* GetForwardingTable ()
+  {
+    return &m_ForwardingTable;
   }
   /**
    * Get distance vector table
    * \returns the distance vector table
    */
-  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>> GetDistanceVectorTable () const
+  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >* GetDistanceVectorTable ()
   {
-    return m_DistanceVectorTable;
+    return &m_DistanceVectorTable;
   }
   /**
    * Add routing table entry if it doesn't yet exist in routing table
@@ -231,7 +239,7 @@ public:
    * \param map Ipv4 address to entry map
    * \return true in success
    */
-  bool AddRoute (RoutingTableEntry & r, std::map<Ipv4Address, RoutingTableEntry> & map);
+  bool AddRoute (RoutingTableEntry & r, std::map<Ipv4Address, RoutingTableEntry>* map);
   /**
    * Delete routing table entry with destination address dst, if it exists.
    * \param dst destination address
@@ -246,14 +254,14 @@ public:
    * \param map Ipv4 address to entry map
    * \return true on success
    */
-  bool LookupRoute (Ipv4Address dst, RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry> & map);
+  bool LookupRoute (Ipv4Address dst, RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry>* map);
   /**
    * Updating the routing Table with routing table entry rt
    * \param rt routing table entry
    * \param map Ipv4 address to entry map
    * \return true on success
    */
-  bool Update (RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry> & map);
+  bool Update (RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry>* map);
   /**
    * Set routing table entry flags
    * \param dst destination address
@@ -267,7 +275,7 @@ public:
    * \param iface the interface
    * \param map Ipv4 address to entry map
    */
-  void DeleteAllRoutesFromInterface (Ipv4InterfaceAddress iface, std::map<Ipv4Address, RoutingTableEntry> & map);
+  void DeleteAllRoutesFromInterface (Ipv4InterfaceAddress iface, std::map<Ipv4Address, RoutingTableEntry>* map);
   /// Delete all entries from routing table
   void Clear () 
   { 
@@ -279,13 +287,13 @@ public:
    * \param unit The time unit to use (default Time::S)
    * \param map Ipv4 address to entry map
    */
-  void Print (std::map<Ipv4Address, RoutingTableEntry> & map, Ptr<OutputStreamWrapper> stream, Time::Unit unit = Time::S) const;
+  void Print (std::map<Ipv4Address, RoutingTableEntry>* map, Ptr<OutputStreamWrapper> stream, Time::Unit unit = Time::S) const;
 
 private:
   /// The forwarding table (main routing table)
   std::map<Ipv4Address, RoutingTableEntry> m_ForwardingTable;
   /// The distance vector table (alternative entries)
-  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry> > m_DistanceVectorTable;
+  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > m_DistanceVectorTable;
 };
 
 }  // namespace bsdvr

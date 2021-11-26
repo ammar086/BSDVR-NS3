@@ -71,16 +71,17 @@ RoutingTableEntry::Print (Ptr<OutputStreamWrapper> stream, Time::Unit unit /* = 
 RoutingTable::RoutingTable ()
 {
 }
+
 bool
-RoutingTable::LookupRoute (Ipv4Address id, RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry> & map)
+RoutingTable::LookupRoute (Ipv4Address id, RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry>* map)
 {
-  if (map.empty ())
+  if (map->empty ())
     {
       NS_LOG_LOGIC ("Route to " << id << " not found; table is empty");
       return false;
     }
-  std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = map.find (id);
-  if (i == map.end ())
+  std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = map->find (id);
+  if (i == map->end ())
     {
       NS_LOG_LOGIC ("Route to " << id << " not found");
       return false;
@@ -101,19 +102,19 @@ RoutingTable::DeleteRoute (Ipv4Address dst, std::map<Ipv4Address, RoutingTableEn
   return false;
 }
 bool
-RoutingTable::AddRoute (RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry> & map)
+RoutingTable::AddRoute (RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry>* map)
 {
   NS_LOG_FUNCTION (this);
   std::pair<std::map<Ipv4Address, RoutingTableEntry>::iterator, bool> result =
-    map.insert (std::make_pair (rt.GetDestination (), rt));
+    map->insert (std::make_pair (rt.GetDestination (), rt));
   return result.second;
 }
 bool
-RoutingTable::Update (RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry> & map)
+RoutingTable::Update (RoutingTableEntry & rt, std::map<Ipv4Address, RoutingTableEntry>* map)
 {
   NS_LOG_FUNCTION (this);
-  std::map<Ipv4Address, RoutingTableEntry>::iterator i = map.find(rt.GetDestination ());
-  if (i == map.end ())
+  std::map<Ipv4Address, RoutingTableEntry>::iterator i = map->find(rt.GetDestination ());
+  if (i == map->end ())
     {
       NS_LOG_LOGIC ("Route update to " << rt.GetDestination () << " fails; not found");
       return false;
@@ -137,20 +138,20 @@ RoutingTable::SetEntryState (Ipv4Address id, RouteState state, std::map<Ipv4Addr
   return true;
 }
 void
-RoutingTable::DeleteAllRoutesFromInterface (Ipv4InterfaceAddress iface, std::map<Ipv4Address, RoutingTableEntry> & map)
+RoutingTable::DeleteAllRoutesFromInterface (Ipv4InterfaceAddress iface, std::map<Ipv4Address, RoutingTableEntry>* map)
 {
   NS_LOG_FUNCTION (this);
-  if (map.empty ())
+  if (map->empty ())
     {
       return;
     }
-  for (std::map<Ipv4Address, RoutingTableEntry>::iterator i = map.begin (); i != map.end ();)
+  for (std::map<Ipv4Address, RoutingTableEntry>::iterator i = map->begin (); i != map->end ();)
     {
       if (i->second.GetInterface () == iface)
         {
           std::map<Ipv4Address, RoutingTableEntry>::iterator tmp = i;
           ++i;
-          map.erase (tmp);
+          map->erase (tmp);
         }
       else
         {
@@ -159,7 +160,7 @@ RoutingTable::DeleteAllRoutesFromInterface (Ipv4InterfaceAddress iface, std::map
     }
 }
 void
-RoutingTable::Print (std::map<Ipv4Address, RoutingTableEntry> & map, Ptr<OutputStreamWrapper> stream, Time::Unit unit /* = Time::S */) const
+RoutingTable::Print (std::map<Ipv4Address, RoutingTableEntry>* map, Ptr<OutputStreamWrapper> stream, Time::Unit unit /* = Time::S */) const
 {
   std::ostream* os = stream->GetStream ();
   // Copy the current ostream state
@@ -174,8 +175,8 @@ RoutingTable::Print (std::map<Ipv4Address, RoutingTableEntry> & map, Ptr<OutputS
   *os << std::setw (16) << "Interface";
   *os << std::setw (16) << "State";
   *os << std::setw (16) << "Hops" << std::endl;
-  for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = map.begin (); i
-       != map.end (); ++i)
+  for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = map->begin (); i
+       != map->end (); ++i)
     {
       i->second.Print (stream, unit);
     }

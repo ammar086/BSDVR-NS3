@@ -1,14 +1,11 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 #include <iostream>
 #include <fstream> 
+#include "ns3/bsdvr.h"
 #include "ns3/core-module.h"
-#include "ns3/bsdvr-packet.h"
-#include "ns3/bsdvr-rtable.h"
 #include "ns3/address-utils.h"
 #include "ns3/v4ping-helper.h"
 #include "ns3/network-module.h"
-#include "ns3/bsdvr-neighbor.h"
-#include "ns3/bsdvr-constants.h"
 #include "ns3/point-to-point-module.h"
 
 using namespace ns3;
@@ -35,6 +32,7 @@ main (int argc, char *argv[])
   std::cout << links.GetExpireTime(Ipv4Address ()) << std::endl;
   /* ... */
   ns3::bsdvr::RoutingTableEntry entry (0, Ipv4Address (), Ipv4InterfaceAddress (), 7, Ipv4Address (), false);
+  ns3::bsdvr::RoutingTableEntry entry2 (0, Ipv4Address (), Ipv4InterfaceAddress (), 8, Ipv4Address (), false);
   std::filebuf fb;
   fb.open ("test.txt",std::ios::out);
   std::ostream os(&fb);
@@ -42,20 +40,32 @@ main (int argc, char *argv[])
   entry.Print (&fs, Time::Unit ());
   /* ... */
   ns3::bsdvr::RoutingTable table;
-  std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry> tmp;
-  tmp = table.GetForwardingTable ();
-  table.AddRoute(entry,tmp);
-  table.Print (tmp, &fs, Time::Unit ());
+  ns3::bsdvr::RoutingProtocol protocol;
+  std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = table.GetForwardingTable ();
+  std::map<Ipv4Address, std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* >* dvt = table.GetDistanceVectorTable ();
+  std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry> n1_entries;
+  std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry> n2_entries;
+  // n1_entries[Ipv4Address()] = entry;
+  // n1_entries[Ipv4Address()] = entry2;
+  (*dvt)[Ipv4Address(1)] = &n1_entries;
+  (*dvt)[Ipv4Address(2)] = &n2_entries;
+  table.AddRoute(entry,&n1_entries);
+  table.AddRoute(entry2,&n2_entries);
+  std::cout << "outer_map: " << dvt->size() << ", inner_map1: " << (*dvt)[Ipv4Address(1)]->size() << ", inner_map2: " << (*dvt)[Ipv4Address(2)]->size() << std::endl; 
   /* ... */
+  table.AddRoute(entry,ft);
+  table.Print (ft, &fs, Time::Unit ());
   ns3::bsdvr::RoutingTableEntry r1 (0, Ipv4Address (), Ipv4InterfaceAddress (), 7, Ipv4Address (), false);
   ns3::bsdvr::RoutingTableEntry r2 (0, Ipv4Address (), Ipv4InterfaceAddress (), 4, Ipv4Address (), false);
   // r2.SetRouteState (ns3::bsdvr::ACTIVE);
   r1.Print (&fs, Time::Unit ());
   r2.Print (&fs, Time::Unit ());
-  std::cout << "Threshold for hopCount is: " << bsdvr::constants::THRESHOLD << std::endl;
-  // std::cout<< "r1 is better than r2: " << table.isBetterRoute(r1, r2) << std::endl;
+  std::cout << "Threshold for hopCount is: " << bsdvr::constants::BSDVR_THRESHOLD << std::endl;
+  std::cout<< "r1 is better than r2: " << protocol.isBetterRoute2(r1,r2) << std::endl;
   /* ... */
-
+  protocol.RefreshForwardingTable2 (Ipv4Address (), Ipv4Address ());
+  std::cout<< "Refreshing FT entry for "<< Ipv4Address ().Get () << std::endl;
+  /* ... */
   Simulator::Run ();
   Simulator::Destroy ();
   return 0;
