@@ -683,9 +683,7 @@ RoutingProtocol::NotifyAddAddress (uint32_t i, Ipv4InterfaceAddress address)
 
           ///NOTE: assuming this is the point a new connection is setup between two nodes to 
           ///      perform the initial exchange of distance vectors. (SYN + SYN-ACK)
-          /// call UpdateDVT
-          /// call computeFT
-          /// call broadcast
+          SendTriggeredUpdateToNeighbor (rt.GetDestination ());
         }
     }
   else
