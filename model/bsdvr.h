@@ -254,7 +254,15 @@ private:
   /** Send Updates when link fails with neighbor
    * \param neighbor the neighbor node
    */
-  void SendUpdateOnLinkFailure (Ipv4Address nextHop);
+  void SendUpdateOnLinkFailure (Ipv4Address ne);
+  /// Send complete forwarding table entries to new neighbor
+  void SendTriggeredUpdateToNeighbor (Ipv4Address ne);
+  /**
+   * Broadcast changes in Forwarding Table to a subset of currently active neighbors
+   * \param changes list of destinations in forwarding table that have their routes updated
+   * \param nex list of neighbors to exclude from broadcast
+   */
+  void SendTriggeredUpdateChangesToNeighbors (std::list<Ipv4Address> changes, std::list<Ipv4Address> nex);
   /// @}
   
   /**
