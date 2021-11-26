@@ -115,7 +115,7 @@ NS_OBJECT_ENSURE_REGISTERED (DeferredRouteOutputTag);
 //-----------------------------------------------------------------------------
 RoutingProtocol::RoutingProtocol ()
   : m_enableHello (false),
-    m_helloInterval (Seconds (1)),
+    m_helloInterval (Seconds (5)),
     m_nb (m_helloInterval),
     m_maxQueueLen (64),
     m_queue (m_maxQueueLen),
@@ -851,7 +851,6 @@ RoutingProtocol::ProcessHello (HelloHeader const & hlHeader, Ipv4Address receive
           break;
         }
     }
-  
   std::map<Ipv4Address, RoutingTableEntry>* dv = new std::map<Ipv4Address, RoutingTableEntry> ();
   if (dvt_iter != dvt->end ())
     {
@@ -877,7 +876,6 @@ RoutingProtocol::ProcessHello (HelloHeader const & hlHeader, Ipv4Address receive
     {
       m_nb.Update (origin, Time (m_helloInterval));
     }
-  
 }
 //-----------------------------------------------------------------------------
 
@@ -1083,16 +1081,27 @@ RoutingProtocol::SendUpdateOnLinkFailure (Ipv4Address ne)
   std::list<Ipv4Address> nex;
   std::list<Ipv4Address> changes;
   std::map<Ipv4Address, RoutingTableEntry>::iterator n_dvt_entry;
+  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>*>::iterator n_dvt;
   std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > *dvt = m_routingTable.GetDistanceVectorTable ();
-  n_dvt_entry = (*dvt)[ne]->find(ne);
-  if (n_dvt_entry != (*dvt)[ne]->end ())
+  for (n_dvt = dvt->begin (); n_dvt != dvt->end (); ++n_dvt)
     {
-      nex.push_back (ne);
-      RoutingTableEntry rt = n_dvt_entry->second;
-      rt.SetRouteState (INACTIVE);
-      UpdateDistanceVectorTable (ne, rt);
-      changes = ComputeForwardingTable ();
-      SendTriggeredUpdateChangesToNeighbors (changes, nex);
+      if (n_dvt->first == ne)
+        {
+          break;
+        }
+    }
+  if (n_dvt != dvt->end ())
+    {
+      n_dvt_entry = (*dvt)[ne]->find(ne);
+      if (n_dvt_entry != (*dvt)[ne]->end ())
+        {
+          nex.push_back (ne);
+          RoutingTableEntry rt = n_dvt_entry->second;
+          rt.SetRouteState (INACTIVE);
+          UpdateDistanceVectorTable (ne, rt);
+          changes = ComputeForwardingTable ();
+          SendTriggeredUpdateChangesToNeighbors (changes, nex);
+        }
     }
 }
 void 
