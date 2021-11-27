@@ -1295,10 +1295,11 @@ RoutingProtocol::RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt)
            {
              std::cout<<"Neighbor: " << i->m_neighborAddress << " initial DV " << std::endl;
              std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
-             for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator o = n_dvt_entries->begin (); o != n_dvt_entries->end (); ++o)
+             /*for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator o = n_dvt_entries->begin (); o != n_dvt_entries->end (); ++o)
                {
                  std::cout<<"Neighbor: " << i->m_neighborAddress << " Destination: " << o->first << std::endl;
                }
+              */
              std::list<Ipv4Address> erase_ips;
              for (std::map<Ipv4Address, RoutingTableEntry>::iterator j = n_dvt_entries->begin (); j != n_dvt_entries->end (); ++j)
                 {
@@ -1341,6 +1342,20 @@ RoutingProtocol::RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt)
                   erase_ips.clear ();
                   std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
                   /*for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator o = n_dvt_entries->begin (); o != n_dvt_entries->end (); ++o)
+                    {
+                      std::cout<<"Neighbor: " << i->m_neighborAddress << " Destination: " << o->first << std::endl;
+                    }
+                  */
+                }
+              if (!erase_ips.empty ())
+                {
+                  for (std::list<Ipv4Address>::iterator r = erase_ips.begin (); r != erase_ips.end (); ++r)
+                    {
+                      (*dvt)[i->m_neighborAddress]->erase(*r);
+                    }
+                  erase_ips.clear ();
+                  /*std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
+                  for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator o = n_dvt_entries->begin (); o != n_dvt_entries->end (); ++o)
                     {
                       std::cout<<"Neighbor: " << i->m_neighborAddress << " Destination: " << o->first << std::endl;
                     }
