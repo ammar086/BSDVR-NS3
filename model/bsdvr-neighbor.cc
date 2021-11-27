@@ -95,6 +95,7 @@ Neighbors::Purge ()
     }
 
   CloseNeighbor pred;
+  std::cout << "Coming inside neighbor list Purge () " << std::endl;
   if (!m_handleLinkFailure.IsNull ())
     {
       for (std::vector<Neighbor>::iterator j = m_nb.begin (); j != m_nb.end (); ++j)
@@ -102,13 +103,17 @@ Neighbors::Purge ()
           if (pred (*j))
             {
               NS_LOG_LOGIC ("Close link to " << j->m_neighborAddress);
+              std::cout << "Calling SendUpateOnLinkFalure from IsNull " << std::endl;
               m_handleLinkFailure (j->m_neighborAddress);
             }
         }
     }
+  std::cout << "Removing neighbors who have timed out " << std::endl;
   m_nb.erase (std::remove_if (m_nb.begin (), m_nb.end (), pred), m_nb.end ());
+  std::cout << "Resetting own send hello timer " << std::endl;
   m_ntimer.Cancel ();
   m_ntimer.Schedule ();
+  std::cout << "exiting neighbor list Purge () " << std::endl;
 }
 
 void

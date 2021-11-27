@@ -985,6 +985,7 @@ RoutingProtocol::RecvUpdate (Ptr<Packet> p, Ipv4Address my, Ipv4Address src)
    * If UPDATE message is INACTIVE and not on primary path:
    * - initiate pending reply timer <= PendingReplyEnqueue ()
    */
+  std::cout << "Inside recvUpdate 1" << std::endl;
   uint32_t state = uptHeader.GetBinaryState ();
   RouteState rs = (state == 1) ? ACTIVE : INACTIVE;
   Ptr<NetDevice> dev = m_ipv4->GetNetDevice (m_ipv4->GetInterfaceForAddress (my));
@@ -992,10 +993,14 @@ RoutingProtocol::RecvUpdate (Ptr<Packet> p, Ipv4Address my, Ipv4Address src)
                         /*iface=*/ m_ipv4->GetAddress (m_ipv4->GetInterfaceForAddress (my), 0),
                         /*hops=*/ hop, /*next hop=*/ src, /*changedEntries*/ false);
   rt.SetRouteState (rs);
+  std::cout << "Inside recvUpdate 2" << std::endl;
   UpdateDistanceVectorTable (src, rt);
+  std::cout << "Inside recvUpdate 3" << std::endl;
   std::list<Ipv4Address> changes = ComputeForwardingTable ();
+  std::cout << "Inside recvUpdate 4" << std::endl;
   /// NOTE: Add Broadcast changes function here
   SendTriggeredUpdateChangesToNeighbors (changes, nex);
+  std::cout << "Inside recvUpdate 5" << std::endl;
   // std::cout << changes.size () << std::endl;
   /// NOTE: Add Re-Transmit current entry function here
   /// NOTE: Send buffered packets
@@ -1003,13 +1008,14 @@ RoutingProtocol::RecvUpdate (Ptr<Packet> p, Ipv4Address my, Ipv4Address src)
   std::map<Ipv4Address, RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
   for (std::list<Ipv4Address>::const_iterator i = changes.begin (); i != changes.end (); ++i)
     {
+      std::cout << "Inside recvUpdate 6" << std::endl;
       ft_entry = ft->find(*i);
       if (ft_entry != ft->end())
         {
           SendPacketFromQueue (*i, ft_entry->second.GetRoute ());
         }
     } 
-
+  std::cout << "Inside recvUpdate 7" << std::endl;
 }
 
 //-----------------------------------------------------------------------------
@@ -1021,6 +1027,8 @@ void
 RoutingProtocol::SendHello ()
 {
   NS_LOG_FUNCTION (this);
+  /// FIXME: Calling Purge () here temporarily
+  m_nb.Purge ();
   /* Broadcast a Hello message with TTL = 1 */
   for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::const_iterator j = m_socketAddresses.begin ();
        j != m_socketAddresses.end (); ++j)
@@ -1077,6 +1085,7 @@ void
 RoutingProtocol::SendUpdate (/*ft entry=*/ RoutingTableEntry const & rt, /*neighbor*/Ipv4Address const & ne)
 {
   NS_LOG_FUNCTION (this << rt.GetDestination ());
+  std::cout << ne << " " << (ne == Ipv4Address ()) << " =================== " << (ne == Ipv4Address ("102.102.102.102")) << std::endl;
   ///NOTE: set packet header value over here
   u_int32_t hops = rt.GetHop ();
   Ipv4Address dst = rt.GetDestination ();
@@ -1099,31 +1108,45 @@ RoutingProtocol::SendUpdate (/*ft entry=*/ RoutingTableEntry const & rt, /*neigh
 void 
 RoutingProtocol::SendUpdateOnLinkFailure (Ipv4Address ne)
 {
+  NS_LOG_FUNCTION (this << ne);
+  std::cout << "Inside SendUpdateOnLinkFailure 1" << std::endl;
   std::list<Ipv4Address> nex;
   std::list<Ipv4Address> changes;
   std::map<Ipv4Address, RoutingTableEntry>::iterator n_dvt_entry;
   std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>*>::iterator n_dvt;
   std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > *dvt = m_routingTable.GetDistanceVectorTable ();
+  std::cout << "Inside SendUpdateOnLinkFailure 2" << std::endl;
   for (n_dvt = dvt->begin (); n_dvt != dvt->end (); ++n_dvt)
     {
+      std::cout << "Inside SendUpdateOnLinkFailure 3" << std::endl;
       if (n_dvt->first == ne)
         {
+          std::cout << "Inside SendUpdateOnLinkFailure 4" << std::endl;
           break;
         }
     }
+  std::cout << "Inside SendUpdateOnLinkFailure 5" << std::endl;
   if (n_dvt != dvt->end ())
     {
+      std::cout << "Inside SendUpdateOnLinkFailure 6" << std::endl;
       n_dvt_entry = (*dvt)[ne]->find(ne);
+      std::cout << "Inside SendUpdateOnLinkFailure 7" << std::endl;
       if (n_dvt_entry != (*dvt)[ne]->end ())
         {
+          std::cout << "Inside SendUpdateOnLinkFailure 8" << std::endl;
           nex.push_back (ne);
           RoutingTableEntry rt = n_dvt_entry->second;
+          std::cout << "Inside SendUpdateOnLinkFailure 9" << std::endl;
           rt.SetRouteState (INACTIVE);
           UpdateDistanceVectorTable (ne, rt);
+          std::cout << "Inside SendUpdateOnLinkFailure 10" << std::endl;
           changes = ComputeForwardingTable ();
+          std::cout << "Inside SendUpdateOnLinkFailure 11" << std::endl;
           SendTriggeredUpdateChangesToNeighbors (changes, nex);
+          std::cout << "Inside SendUpdateOnLinkFailure 12" << std::endl;
         }
     }
+  std::cout << "Inside SendUpdateOnLinkFailure 13" << std::endl;
 }
 void 
 RoutingProtocol::SendTriggeredUpdateToNeighbor (Ipv4Address ne)
@@ -1132,7 +1155,11 @@ RoutingProtocol::SendTriggeredUpdateToNeighbor (Ipv4Address ne)
   for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = ft->begin ();
        i != ft->end (); ++i)
     {
-      if (i->first != m_mainAddress && i->first != ne && i->first != Ipv4Address ("127.0.0.1") && !i->first.IsBroadcast ())
+      if (i->second.GetDestination () == Ipv4Address ())
+      {
+        continue;
+      }
+      if (i->first != m_mainAddress && i->first != ne && ne != Ipv4Address () && i->first != Ipv4Address ("10.1.1.255") && i->first != Ipv4Address ("127.0.0.1") && !i->first.IsBroadcast ())
         {
           SendUpdate (i->second, ne);
         }
@@ -1141,6 +1168,7 @@ RoutingProtocol::SendTriggeredUpdateToNeighbor (Ipv4Address ne)
 void 
 RoutingProtocol::SendTriggeredUpdateChangesToNeighbors (std::list<Ipv4Address> changes, std::list<Ipv4Address> nex)
 {
+  NS_LOG_FUNCTION (this << nex.size () << changes.size ());
   std::list<Ipv4Address>::iterator n;
   std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
   std::vector<Neighbors::Neighbor> neighbors = m_nb.GetNeighbors ();
@@ -1230,21 +1258,34 @@ RoutingProtocol::RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt)
   RouteState curr_state;
   std::list<Ipv4Address> fake_dsts;
   Ipv4Address dst = rt.GetDestination ();
+  std::vector<Neighbors::Neighbor>::iterator n;
+  std::cout << "Inside removeFakePaths 1" << std::endl;
   /// FIXME: Make sure the getter returns a pointer to actual rtable to allow insert and removal of entries
+  std::vector<Neighbors::Neighbor> m_neighbors =  m_nb.GetNeighbors();
   std::map<Ipv4Address, RoutingTableEntry> *ft = m_routingTable.GetForwardingTable ();
   for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = ft->begin (); i != ft->end (); i++)
     {
+      std::cout << "Inside removeFakePaths 2" << std::endl;
       curr_dst = i->first;
       curr_nxtHp = i->second.GetNextHop ();
       curr_state = i->second.GetRouteState ();
       if (curr_state == ACTIVE && rt.GetRouteState () == INACTIVE)
         {
+          std::cout << "Inside removeFakePaths 3" << std::endl;
           if (nxtHp == curr_nxtHp && dst == curr_dst)
             {
+              std::cout << "Inside removeFakePaths 4" << std::endl;
               fake_dsts.push_back (curr_dst);
             }
-          // TODO: Confirm if neighbor check works right
-          if (nxtHp == dst && m_nb.IsNeighbor (nxtHp))
+          /// TODO: Confirm if neighbor check works right
+          for (n = m_neighbors.begin (); n != m_neighbors.end (); ++n)
+            {
+              if (n->m_neighborAddress == nxtHp)
+                {
+                  break;
+                }
+            }
+          if (nxtHp == dst && n != m_neighbors.end ())
             {
             if (curr_nxtHp == nxtHp && dst != curr_dst)
               {
@@ -1253,8 +1294,7 @@ RoutingProtocol::RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt)
             }
         }
     }
-    //FIXME: Make sure the getter returns a pointer to actual rtable to allow insert and removal of entries
-    std::vector<Neighbors::Neighbor> m_neighbors =  m_nb.GetNeighbors();
+    /// FIXME: Make sure the getter returns a pointer to actual rtable to allow insert and removal of entries
     std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > *dvt = m_routingTable.GetDistanceVectorTable ();
     for (std::vector<Neighbors::Neighbor>::iterator i = m_neighbors.begin ();
        i != m_neighbors.end (); ++i)
@@ -1262,23 +1302,55 @@ RoutingProtocol::RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt)
          std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >::iterator n_dvt = dvt->find (i->m_neighborAddress);
          if (n_dvt != dvt->end ())
            {
+             std::cout<<"Neighbor: " << i->m_neighborAddress << " initial DV " << std::endl;
              std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
-             for (std::map<Ipv4Address, RoutingTableEntry>::iterator j = n_dvt_entries->begin (); j != n_dvt_entries->end (); j++)
+             for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator o = n_dvt_entries->begin (); o != n_dvt_entries->end (); ++o)
+               {
+                 std::cout<<"Neighbor: " << i->m_neighborAddress << " Destination: " << o->first << std::endl;
+               }
+             std::list<Ipv4Address> erase_ips;
+             for (std::map<Ipv4Address, RoutingTableEntry>::iterator j = n_dvt_entries->begin (); j != n_dvt_entries->end (); ++j)
                 {
-                    for (std::list<Ipv4Address>::iterator k = fake_dsts.begin (); k != fake_dsts.end (); k++)
+                    std::cout << "Size: " << (n_dvt_entries->size ()) <<  std::endl;
+                    std::cout << "Inside removeFakePaths 12" << std::endl;
+                    for (std::list<Ipv4Address>::iterator k = fake_dsts.begin (); k != fake_dsts.end (); ++k)
                        {
-                         if (*k != j->first)
+                         std::cout << "Inside removeFakePaths 13" << std::endl;
+                         if (*k == j->first)
                            {
+                             std::cout << "Inside removeFakePaths 14" << std::endl;
                              curr_nxtHp = (*ft)[j->first].GetNextHop ();
+                             std::cout << "Inside removeFakePaths 15" << std::endl;
                              if (i->m_neighborAddress != curr_nxtHp)
-                               {
-                                 (*dvt)[i->m_neighborAddress]->erase(j->first);
+                               { 
+                                 std::cout << "Inside removeFakePaths 16" << std::endl;
+                                 //(*dvt)[i->m_neighborAddress]->erase(*k);
+                                 erase_ips.push_back (*k);
+                                 std::cout << "Inside removeFakePaths 17" << std::endl;
                                }
                            }
                        }
+                    std::cout << "Here 17" << std::endl;
                 }
+              if (!erase_ips.empty ())
+                {
+                  for (std::list<Ipv4Address>::iterator r = erase_ips.begin (); r != erase_ips.end (); ++r)
+                    {
+                      (*dvt)[i->m_neighborAddress]->erase(*r);
+                    }
+                  erase_ips.clear ();
+                  std::cout<<"Neighbor: " << i->m_neighborAddress << " ======================after removals DV====================== " << std::endl;
+                  std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
+                  for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator o = n_dvt_entries->begin (); o != n_dvt_entries->end (); ++o)
+                    {
+                      std::cout<<"Neighbor: " << i->m_neighborAddress << " Destination: " << o->first << std::endl;
+                    }
+                }
+            std::cout << "Here 18" << std::endl;
            }
-       }   
+           std::cout << "Here 19" << std::endl;
+       }
+    std::cout << "Inside removeFakePaths 18" << std::endl;  
 }
 
 void 
@@ -1294,14 +1366,19 @@ RoutingProtocol::UpdateDistanceVectorTable (Ipv4Address nxtHp, RoutingTableEntry
   // Iterators
   std::vector<Neighbors::Neighbor>::iterator n;
   std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
+  std::map<Ipv4Address, RoutingTableEntry>::iterator n_dvt_entry;
   std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >::iterator n_dvt;
+
+  std::cout << "Inside updateDVT 1" << std::endl;
 
   ft_entry = ft->find (dst);
   if (ft_entry != ft->end ())
     {
       try
       {
+        std::cout << "Inside updateDVT 2" << std::endl;
         RemoveFakeRoutes (nxtHp, rt);
+        std::cout << "Inside updateDVT 3" << std::endl;
       }
       catch(const std::exception& e)
       {
@@ -1309,6 +1386,7 @@ RoutingProtocol::UpdateDistanceVectorTable (Ipv4Address nxtHp, RoutingTableEntry
       }
       
     }
+  std::cout << "Inside updateDVT 4" << std::endl;
   /// FIXME: Improve search in neighbor vector
   for (n = m_neighbors.begin (); n != m_neighbors.end (); ++n)
     {
@@ -1317,19 +1395,39 @@ RoutingProtocol::UpdateDistanceVectorTable (Ipv4Address nxtHp, RoutingTableEntry
           break;
         }
     }
+  std::cout << "Inside updateDVT 5" << std::endl;
   n_dvt = (*dvt).find (nxtHp);
+  std::cout << "Inside updateDVT 6" << std::endl;
   if (n != m_neighbors.end () && n_dvt != (*dvt).end ())
     {
       /// NOTE: Assuming all neighbor hopCounts to be 1 so entries won't change will link quality
       // Do nothing
+      std::cout << "Inside updateDVT 7" << std::endl;
     }
   else
     {
       /// NOTE: As link quality is assumed constant, no total-cost calc. performed and
       //check against THRESHOLD value to skip total-cost calc.
+      std::cout << "Inside updateDVT 8" << std::endl;
+      if (n_dvt == dvt->end ())
+        {
+          dvt->insert (std::make_pair (nxtHp, new std::map<Ipv4Address, RoutingTableEntry> ()));
+        }
       std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[nxtHp];
-      (*n_dvt_entries)[dst] = rt;
-    } 
+      std::cout << "Inside updateDVT 9" << n_dvt_entries << std::endl;
+      n_dvt_entry = (*dvt)[nxtHp]->find (dst);
+      if (n_dvt_entry != (*dvt)[nxtHp]->end ())
+        {
+          std::cout << "Inside updateDVT 10" << std::endl;
+          (*n_dvt_entries)[dst] = rt;
+        }
+      else 
+        {
+          std::cout << "Inside updateDVT 11" << std::endl;
+          (*n_dvt_entries).insert (std::make_pair (dst,rt));
+        }
+    }
+  std::cout << "Inside updateDVT 12" << std::endl; 
 }
 
 void
@@ -1375,7 +1473,6 @@ RoutingProtocol::ComputeForwardingTable ()
   std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > *dvt = m_routingTable.GetDistanceVectorTable ();
   // Iterators
   std::list<Ipv4Address>::iterator c;
-  std::vector<Neighbors::Neighbor>::iterator n;
   std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
   std::map<Ipv4Address, RoutingTableEntry>::iterator n_dvt_entry;
   std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >::iterator n_dvt_entries_find;
