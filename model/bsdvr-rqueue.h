@@ -234,7 +234,7 @@ public:
    * \param entry the queue entry
    * \returns true if the entry is dequeued
    */
-  bool Dequeue (Ipv4Address dst, QueueEntry & entry);
+  bool Dequeue (Ipv4Address dst, QueueEntry & entry, u_int32_t sval);
   /**
    * Remove all packets with destination IP address dst
    * \param dst the destination IP address

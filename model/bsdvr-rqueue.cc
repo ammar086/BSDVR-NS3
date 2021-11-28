@@ -47,16 +47,38 @@ BsdvrQueue::Enqueue (QueueEntry & entry)
   return true;
 }
 bool
-BsdvrQueue::Dequeue (Ipv4Address dst, QueueEntry &entry)
+BsdvrQueue::Dequeue (Ipv4Address dst, QueueEntry &entry, u_int32_t sval)
 {
-  for (std::vector<QueueEntry>::const_iterator i = m_queue.begin (); i 
+  for (std::vector<QueueEntry>::iterator i = m_queue.begin (); i 
        != m_queue.end (); i++)
     {
-      if (i->GetIpv4Header ().GetDestination () == dst)
+      // if (i->GetIpv4Header ().GetDestination () == dst)
+      //   {
+      //     entry = *i;
+      //     m_queue.erase (i);
+      //     return true;
+      //   }
+      if (sval == 2) // Active Route
         {
-          entry = *i;
-          m_queue.erase (i);
-          return true;
+          if (i->GetIpv4Header ().GetDestination () == dst)
+            {
+              if (i->GetStatus () == BSDVRTYPE_NOT_FORWARDED || 
+                  i->GetStatus () == BSDVRTYPE_INACTIVE_FORWARDED)
+                {
+                  i->SetStatus (BSDVRTYPE_ACTIVE_FORWARDED);
+                  entry = *i;
+                  return true;
+                }
+            }
+        }
+      else if (sval == 1) // Inactive Route
+        {
+          if (i->GetIpv4Header ().GetDestination () == dst && i->GetStatus () == BSDVRTYPE_NOT_FORWARDED)
+            {
+              i->SetStatus (BSDVRTYPE_INACTIVE_FORWARDED);
+              entry = *i;
+              return true;
+            }
         }
     }
   return false;
@@ -102,6 +124,40 @@ bool
 BsdvrQueue::DropPolicy (QueueEntry &en)
 {
   ///TODO: Add drop policy function over here
+  std::vector<QueueEntry>::iterator onf = m_queue.end ();  //oldest not forwarded
+  std::vector<QueueEntry>::iterator oaf = m_queue.end ();  //oldest active forwarded
+  std::vector<QueueEntry>::iterator oif = m_queue.end ();  //oldest inactive forwarded
+  for (std::vector<QueueEntry>::iterator i = m_queue.begin (); i
+       != m_queue.end (); ++i)
+    {
+      if (i->GetStatus () == BSDVRTYPE_NOT_FORWARDED && onf == m_queue.end ())
+        {
+          onf = i;
+        }
+      else if (i->GetStatus () == BSDVRTYPE_INACTIVE_FORWARDED && oif == m_queue.end ())
+        {
+          oif = i;
+        }
+      else if (i->GetStatus () == BSDVRTYPE_ACTIVE_FORWARDED && oaf == m_queue.end ())
+        {
+          oaf = i;
+        }
+    }
+    if (oaf != m_queue.end ()) // active forwarded first
+      {
+        m_queue.erase (oaf);
+        return true;
+      }
+    else if (oif != m_queue.end ()) // inactive forwarded second
+      {
+        m_queue.erase (oif);
+        return true;
+      }
+    else if (onf != m_queue.end ()) // not forwarded last
+      {
+        m_queue.erase (onf);
+        return true;
+      }
   return false; 
 }
 

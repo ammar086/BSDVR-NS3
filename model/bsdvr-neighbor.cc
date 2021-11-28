@@ -106,6 +106,7 @@ Neighbors::Purge ()
             }
         }
     }
+
   m_nb.erase (std::remove_if (m_nb.begin (), m_nb.end (), pred), m_nb.end ());
   m_ntimer.Cancel ();
   m_ntimer.Schedule ();

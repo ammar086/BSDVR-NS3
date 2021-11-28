@@ -243,7 +243,7 @@ private:
    * \param dst destination address
    * \param route route to use
    */
-  void SendPacketFromQueue (Ipv4Address dst, Ptr<Ipv4Route> route);    
+  void SendPacketFromQueue (Ipv4Address dst, Ptr<Ipv4Route> route, RouteState state);    
   /// Send hello
   void SendHello ();
   /** Send Update

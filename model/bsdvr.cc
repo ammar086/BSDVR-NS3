@@ -115,7 +115,7 @@ NS_OBJECT_ENSURE_REGISTERED (DeferredRouteOutputTag);
 //-----------------------------------------------------------------------------
 RoutingProtocol::RoutingProtocol ()
   : m_enableHello (false),
-    m_helloInterval (Seconds (5)),
+    m_helloInterval (Seconds (2)),
     m_nb (m_helloInterval),
     m_maxQueueLen (64),
     m_queue (m_maxQueueLen),
@@ -569,14 +569,15 @@ RoutingProtocol::NotifyInterfaceUp (uint32_t i)
     {
       m_nb.AddArpCache (l3->GetInterface (i)->GetArpCache ());
     }
-   // Allow neighbor manager use this interface for layer 2 feedback if possible
-   Ptr<WifiNetDevice> wifi = dev->GetObject<WifiNetDevice> ();
-   if (wifi == 0)
+  
+  // Allow neighbor manager use this interface for layer 2 feedback if possible
+  Ptr<WifiNetDevice> wifi = dev->GetObject<WifiNetDevice> ();
+  if (wifi == 0)
     {
       return;
     }
-   Ptr<WifiMac> mac = wifi->GetMac ();
-   if (mac == 0)
+  Ptr<WifiMac> mac = wifi->GetMac ();
+  if (mac == 0)
     {
       return;
     }
@@ -680,10 +681,6 @@ RoutingProtocol::NotifyAddAddress (uint32_t i, Ipv4InterfaceAddress address)
                               /*hops=*/ 1, /*next hop=*/ iface.GetBroadcast (), /*changedEntries*/ false);
           std::map<Ipv4Address, ns3::bsdvr::RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
           m_routingTable.AddRoute (rt, ft);
-
-          ///NOTE: assuming this is the point a new connection is setup between two nodes to 
-          ///      perform the initial exchange of distance vectors. (SYN + SYN-ACK)
-          SendTriggeredUpdateToNeighbor (rt.GetDestination ());
         }
     }
   else
@@ -835,6 +832,10 @@ RoutingProtocol::ProcessHello (HelloHeader const & hlHeader, Ipv4Address receive
 {
   Ipv4Address origin =  hlHeader.GetOrigin ();
   NS_LOG_FUNCTION (this << "from " << origin);
+  if (m_enableHello)
+    {
+      m_nb.Update (origin, Time (m_helloInterval));
+    }
   /*
    *  Whenever a node receives a Hello message from a neighbor, the node
    * SHOULD make sure that it has an active route to the neighbor, and
@@ -846,23 +847,32 @@ RoutingProtocol::ProcessHello (HelloHeader const & hlHeader, Ipv4Address receive
   std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >::iterator dvt_iter;
   for (dvt_iter = dvt->begin (); dvt_iter != dvt->end(); ++dvt_iter)
     {
-      if (dvt_iter->first == receiver)
+      if (dvt_iter->first == origin)
         {
           break;
         }
     }
-  std::map<Ipv4Address, RoutingTableEntry>* dv = new std::map<Ipv4Address, RoutingTableEntry> ();
-  if (dvt_iter != dvt->end ())
+  std::map<Ipv4Address, RoutingTableEntry>* dv;
+  if (dvt_iter == dvt->end ())
     {
-      dv = (*dvt)[receiver]; // receiver node's dv
+      dvt->insert (std::make_pair (origin, new std::map<Ipv4Address, RoutingTableEntry> ()));
     }
+  dv = (*dvt)[origin]; // neighbor node's dv
   if (!m_routingTable.LookupRoute (origin, toNeighbor, dv))
     {
+      std::list<Ipv4Address> nex;
+      std::list<Ipv4Address> changes;
       Ptr<NetDevice> dev = m_ipv4->GetNetDevice (m_ipv4->GetInterfaceForAddress (receiver));
       RoutingTableEntry newEntry (/*device=*/ dev, /*dst=*/ origin, 
                                   /*iface=*/ m_ipv4->GetAddress (m_ipv4->GetInterfaceForAddress (receiver), 0),
                                   /*hops=*/ 1, /*next hop=*/ origin, /*changedEntries*/ false);
       m_routingTable.AddRoute (newEntry, dv);
+      changes = ComputeForwardingTable ();
+      ///NOTE: assuming this is the point a new connection is setup between two nodes to 
+      ///      perform the initial exchange of distance vectors. (SYN + SYN-ACK)
+      //====================== FIXME ======================
+      SendTriggeredUpdateToNeighbor (origin);
+      // SendTriggeredUpdateChangesToNeighbors (changes, nex);
     }
   else
     {
@@ -871,10 +881,6 @@ RoutingProtocol::ProcessHello (HelloHeader const & hlHeader, Ipv4Address receive
       toNeighbor.SetHop (1);
       toNeighbor.SetNextHop (origin);
       m_routingTable.Update(toNeighbor, dv);
-    }
-  if (m_enableHello)
-    {
-      m_nb.Update (origin, Time (m_helloInterval));
     }
 }
 //-----------------------------------------------------------------------------
@@ -938,7 +944,7 @@ RoutingProtocol::RecvHello (Ptr<Packet> p, Ipv4Address my, Ipv4Address src)
   p->RemoveHeader (hlHeader);
   NS_LOG_LOGIC ("HELLO destination " << my << " HELLO origin " << hlHeader.GetOrigin ());
   // Confirming HELLO message
-  if (hlHeader.GetDst () == hlHeader.GetOrigin ())
+  if ((hlHeader.GetDst () == hlHeader.GetOrigin ()))
   {
     ProcessHello (hlHeader, my);
   }
@@ -975,20 +981,23 @@ RoutingProtocol::RecvUpdate (Ptr<Packet> p, Ipv4Address my, Ipv4Address src)
   std::list<Ipv4Address> changes = ComputeForwardingTable ();
   /// NOTE: Add Broadcast changes function here
   SendTriggeredUpdateChangesToNeighbors (changes, nex);
-  // std::cout << changes.size () << std::endl;
   /// NOTE: Add Re-Transmit current entry function here
   /// NOTE: Send buffered packets
-  std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
+  // std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
   std::map<Ipv4Address, RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
-  for (std::list<Ipv4Address>::const_iterator i = changes.begin (); i != changes.end (); ++i)
+  // for (std::list<Ipv4Address>::const_iterator i = changes.begin (); i != changes.end (); ++i)
+  //   {
+  for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = ft->begin (); i != ft->end (); ++i)
     {
-      ft_entry = ft->find(*i);
-      if (ft_entry != ft->end())
+      // ft_entry = ft->find(*i);
+      // if (ft_entry != ft->end())
+        // {
+      if (m_queue.Find (i->first))
         {
-          SendPacketFromQueue (*i, ft_entry->second.GetRoute ());
+          SendPacketFromQueue (i->first, i->second.GetRoute (), i->second.GetRouteState ());
         }
-    } 
-
+        // }
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -1000,6 +1009,8 @@ void
 RoutingProtocol::SendHello ()
 {
   NS_LOG_FUNCTION (this);
+  /// FIXME: Calling Purge () here temporarily
+  m_nb.Purge ();
   /* Broadcast a Hello message with TTL = 1 */
   for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::const_iterator j = m_socketAddresses.begin ();
        j != m_socketAddresses.end (); ++j)
@@ -1030,11 +1041,12 @@ RoutingProtocol::SendHello ()
     }
 }
 void 
-RoutingProtocol::SendPacketFromQueue (Ipv4Address dst, Ptr<Ipv4Route> route)
+RoutingProtocol::SendPacketFromQueue (Ipv4Address dst, Ptr<Ipv4Route> route, RouteState state)
 {
   NS_LOG_FUNCTION (this);
   QueueEntry queueEntry;
-  while (m_queue.Dequeue (dst, queueEntry))
+  u_int32_t sval = (state == ACTIVE) ? 2 : 1; 
+  while (m_queue.Dequeue (dst, queueEntry, sval))
     {
       DeferredRouteOutputTag tag;
       Ptr<Packet> p = ConstCast<Packet> (queueEntry.GetPacket ());
@@ -1078,6 +1090,12 @@ RoutingProtocol::SendUpdate (/*ft entry=*/ RoutingTableEntry const & rt, /*neigh
 void 
 RoutingProtocol::SendUpdateOnLinkFailure (Ipv4Address ne)
 {
+  /// FIXME: make filter upper bound dynamic for variable number of nodes in the network
+  if ((Ipv4Address ("10.1.1.0") < ne) && (ne) < Ipv4Address ("10.1.1.51"))
+    {
+      return;
+    }
+  NS_LOG_FUNCTION (this << ne);
   std::list<Ipv4Address> nex;
   std::list<Ipv4Address> changes;
   std::map<Ipv4Address, RoutingTableEntry>::iterator n_dvt_entry;
@@ -1111,7 +1129,11 @@ RoutingProtocol::SendTriggeredUpdateToNeighbor (Ipv4Address ne)
   for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = ft->begin ();
        i != ft->end (); ++i)
     {
-      if (i->first != m_mainAddress && i->first != ne)
+      if (i->second.GetDestination () == Ipv4Address ())
+      {
+        continue;
+      }
+      if (i->first != m_mainAddress && i->first != ne && ne != Ipv4Address () && i->first != Ipv4Address ("10.1.1.255") && i->first != Ipv4Address ("127.0.0.1") && !i->first.IsBroadcast ())
         {
           SendUpdate (i->second, ne);
         }
@@ -1120,6 +1142,7 @@ RoutingProtocol::SendTriggeredUpdateToNeighbor (Ipv4Address ne)
 void 
 RoutingProtocol::SendTriggeredUpdateChangesToNeighbors (std::list<Ipv4Address> changes, std::list<Ipv4Address> nex)
 {
+  NS_LOG_FUNCTION (this << nex.size () << changes.size ());
   std::list<Ipv4Address>::iterator n;
   std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
   std::vector<Neighbors::Neighbor> neighbors = m_nb.GetNeighbors ();
@@ -1144,7 +1167,10 @@ RoutingProtocol::SendTriggeredUpdateChangesToNeighbors (std::list<Ipv4Address> c
               ft_entry = ft->find(*j);
               if (ft_entry != ft->end ())
                 {
-                  SendUpdate (ft_entry->second, ne);
+                  if (ft_entry->first != ne)
+                  {
+                    SendUpdate (ft_entry->second, ne);
+                  }
                 }
             }
         }
@@ -1209,7 +1235,9 @@ RoutingProtocol::RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt)
   RouteState curr_state;
   std::list<Ipv4Address> fake_dsts;
   Ipv4Address dst = rt.GetDestination ();
+  std::vector<Neighbors::Neighbor>::iterator n;
   /// FIXME: Make sure the getter returns a pointer to actual rtable to allow insert and removal of entries
+  std::vector<Neighbors::Neighbor> m_neighbors =  m_nb.GetNeighbors();
   std::map<Ipv4Address, RoutingTableEntry> *ft = m_routingTable.GetForwardingTable ();
   for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = ft->begin (); i != ft->end (); i++)
     {
@@ -1222,8 +1250,15 @@ RoutingProtocol::RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt)
             {
               fake_dsts.push_back (curr_dst);
             }
-          // TODO: Confirm if neighbor check works right
-          if (nxtHp == dst && m_nb.IsNeighbor (nxtHp))
+          /// TODO: Confirm if neighbor check works right
+          for (n = m_neighbors.begin (); n != m_neighbors.end (); ++n)
+            {
+              if (n->m_neighborAddress == nxtHp)
+                {
+                  break;
+                }
+            }
+          if (nxtHp == dst && n != m_neighbors.end ())
             {
             if (curr_nxtHp == nxtHp && dst != curr_dst)
               {
@@ -1232,8 +1267,7 @@ RoutingProtocol::RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt)
             }
         }
     }
-    //FIXME: Make sure the getter returns a pointer to actual rtable to allow insert and removal of entries
-    std::vector<Neighbors::Neighbor> m_neighbors =  m_nb.GetNeighbors();
+    /// FIXME: Make sure the getter returns a pointer to actual rtable to allow insert and removal of entries
     std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > *dvt = m_routingTable.GetDistanceVectorTable ();
     for (std::vector<Neighbors::Neighbor>::iterator i = m_neighbors.begin ();
        i != m_neighbors.end (); ++i)
@@ -1242,22 +1276,43 @@ RoutingProtocol::RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt)
          if (n_dvt != dvt->end ())
            {
              std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
-             for (std::map<Ipv4Address, RoutingTableEntry>::iterator j = n_dvt_entries->begin (); j != n_dvt_entries->end (); j++)
+             /*for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator o = n_dvt_entries->begin (); o != n_dvt_entries->end (); ++o)
+               {
+                 std::cout<<"Neighbor: " << i->m_neighborAddress << " Destination: " << o->first << std::endl;
+               }
+              */
+             std::list<Ipv4Address> erase_ips;
+             for (std::map<Ipv4Address, RoutingTableEntry>::iterator j = n_dvt_entries->begin (); j != n_dvt_entries->end (); ++j)
                 {
-                    for (std::list<Ipv4Address>::iterator k = fake_dsts.begin (); k != fake_dsts.end (); k++)
+                    for (std::list<Ipv4Address>::iterator k = fake_dsts.begin (); k != fake_dsts.end (); ++k)
                        {
-                         if (*k != j->first)
+                         if (*k == j->first)
                            {
                              curr_nxtHp = (*ft)[j->first].GetNextHop ();
                              if (i->m_neighborAddress != curr_nxtHp)
-                               {
-                                 (*dvt)[i->m_neighborAddress]->erase(j->first);
+                               { 
+                                 //(*dvt)[i->m_neighborAddress]->erase(*k);
+                                 erase_ips.push_back (*k);
                                }
                            }
                        }
                 }
+              if (!erase_ips.empty ())
+                {
+                  for (std::list<Ipv4Address>::iterator r = erase_ips.begin (); r != erase_ips.end (); ++r)
+                    {
+                      (*dvt)[i->m_neighborAddress]->erase(*r);
+                    }
+                  erase_ips.clear ();
+                  /*std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
+                  for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator o = n_dvt_entries->begin (); o != n_dvt_entries->end (); ++o)
+                    {
+                      std::cout<<"Neighbor: " << i->m_neighborAddress << " Destination: " << o->first << std::endl;
+                    }
+                  */
+                }
            }
-       }   
+       }
 }
 
 void 
@@ -1273,7 +1328,9 @@ RoutingProtocol::UpdateDistanceVectorTable (Ipv4Address nxtHp, RoutingTableEntry
   // Iterators
   std::vector<Neighbors::Neighbor>::iterator n;
   std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
+  std::map<Ipv4Address, RoutingTableEntry>::iterator n_dvt_entry;
   std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >::iterator n_dvt;
+
 
   ft_entry = ft->find (dst);
   if (ft_entry != ft->end ())
@@ -1306,9 +1363,21 @@ RoutingProtocol::UpdateDistanceVectorTable (Ipv4Address nxtHp, RoutingTableEntry
     {
       /// NOTE: As link quality is assumed constant, no total-cost calc. performed and
       //check against THRESHOLD value to skip total-cost calc.
+      if (n_dvt == dvt->end ())
+        {
+          dvt->insert (std::make_pair (nxtHp, new std::map<Ipv4Address, RoutingTableEntry> ()));
+        }
       std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[nxtHp];
-      (*n_dvt_entries)[dst] = rt;
-    } 
+      n_dvt_entry = (*dvt)[nxtHp]->find (dst);
+      if (n_dvt_entry != (*dvt)[nxtHp]->end ())
+        {
+          (*n_dvt_entries)[dst] = rt;
+        }
+      else 
+        {
+          (*n_dvt_entries).insert (std::make_pair (dst,rt));
+        }
+    }
 }
 
 void
@@ -1353,59 +1422,67 @@ RoutingProtocol::ComputeForwardingTable ()
   std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* > *dvt = m_routingTable.GetDistanceVectorTable ();
   // Iterators
   std::list<Ipv4Address>::iterator c;
-  std::vector<Neighbors::Neighbor>::iterator n;
   std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
   std::map<Ipv4Address, RoutingTableEntry>::iterator n_dvt_entry;
-
+  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>* >::iterator n_dvt_entries_find;
   for (std::vector<Neighbors::Neighbor>::iterator i = m_neighbors.begin ();
        i != m_neighbors.end (); ++i)
       {
-        std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
-        for (n_dvt_entry = n_dvt_entries->begin (); n_dvt_entry != n_dvt_entries->end (); n_dvt_entry++)
-        {
-          ft_entry = ft->find (n_dvt_entry->first);
-          if (ft_entry != ft->end ())
-            {
-              try
+        for (n_dvt_entries_find = dvt->begin (); n_dvt_entries_find != dvt->end (); ++n_dvt_entries_find)
+          {
+            if (n_dvt_entries_find->first == i->m_neighborAddress)
               {
-                curr_nxtHp = (*ft)[n_dvt_entry->first].GetNextHop ();
-                old_entry = (*ft)[n_dvt_entry->first];
-                RefreshForwardingTable (n_dvt_entry->first, curr_nxtHp);
-                new_entry = (*(*dvt)[i->m_neighborAddress])[n_dvt_entry->first];
-                curr_entry = (*ft)[n_dvt_entry->first];
-                if (isBetterRoute (new_entry, curr_entry))
+                break;
+              }
+          }
+        if (n_dvt_entries_find != dvt->end ())
+          {
+            std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
+            for (n_dvt_entry = n_dvt_entries->begin (); n_dvt_entry != n_dvt_entries->end (); n_dvt_entry++)
+            {
+              ft_entry = ft->find (n_dvt_entry->first);
+              if (ft_entry != ft->end ())
+                {
+                  try
                   {
-                    (*ft)[n_dvt_entry->first] = new_entry;
-                    c = std::find(changes.begin (), changes.end (), n_dvt_entry->first);
-                    if (c != changes.end ())
+                    curr_nxtHp = (*ft)[n_dvt_entry->first].GetNextHop ();
+                    old_entry = (*ft)[n_dvt_entry->first];
+                    RefreshForwardingTable (n_dvt_entry->first, curr_nxtHp);
+                    new_entry = (*(*dvt)[i->m_neighborAddress])[n_dvt_entry->first];
+                    curr_entry = (*ft)[n_dvt_entry->first];
+                    if (isBetterRoute (new_entry, curr_entry))
                       {
-                        changes.push_back (n_dvt_entry->first);
+                        (*ft)[n_dvt_entry->first] = new_entry;
+                        c = std::find(changes.begin (), changes.end (), n_dvt_entry->first);
+                        if (c != changes.end ())
+                          {
+                            changes.push_back (n_dvt_entry->first);
+                          }
+                      }
+                    else if ((curr_entry.GetHop () != old_entry.GetHop ()) || (curr_entry.GetRouteState () != old_entry.GetRouteState ()))
+                      {
+                        c = std::find(changes.begin (), changes.end (), n_dvt_entry->first);
+                        if (c != changes.end ())
+                          {
+                            changes.push_back (n_dvt_entry->first);
+                          }
                       }
                   }
-                else if ((curr_entry.GetHop () != old_entry.GetHop ()) || (curr_entry.GetRouteState () != old_entry.GetRouteState ()))
+                  catch(const std::exception& e)
                   {
-                    c = std::find(changes.begin (), changes.end (), n_dvt_entry->first);
-                    if (c != changes.end ())
-                      {
-                        changes.push_back (n_dvt_entry->first);
-                      }
+                    std::cerr << e.what() << '\n';
                   }
-              }
-              catch(const std::exception& e)
-              {
-                std::cerr << e.what() << '\n';
-              }
-              
+                  
+                }
+              else
+                {
+                  new_entry = (*(*dvt)[i->m_neighborAddress])[n_dvt_entry->first];
+                  (*ft)[n_dvt_entry->first] = new_entry;
+                  changes.push_back (n_dvt_entry->first);
+                }
             }
-          else
-            {
-              new_entry = (*(*dvt)[i->m_neighborAddress])[n_dvt_entry->first];
-              (*ft)[n_dvt_entry->first] = new_entry;
-              changes.push_back (n_dvt_entry->first);
-            }
-        }
+          }
       }
-  
   changes.remove (m_mainAddress);
   return changes;
 }
