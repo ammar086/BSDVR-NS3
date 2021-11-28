@@ -990,17 +990,21 @@ RoutingProtocol::RecvUpdate (Ptr<Packet> p, Ipv4Address my, Ipv4Address src)
   SendTriggeredUpdateChangesToNeighbors (changes, nex);
   /// NOTE: Add Re-Transmit current entry function here
   /// NOTE: Send buffered packets
-  std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
+  // std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
   std::map<Ipv4Address, RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
-  for (std::list<Ipv4Address>::const_iterator i = changes.begin (); i != changes.end (); ++i)
+  // for (std::list<Ipv4Address>::const_iterator i = changes.begin (); i != changes.end (); ++i)
+  //   {
+  for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator i = ft->begin (); i != ft->end (); ++i)
     {
-      std::cout << "Inside recvUpdate 6" << std::endl;
-      ft_entry = ft->find(*i);
-      if (ft_entry != ft->end())
+      // ft_entry = ft->find(*i);
+      // if (ft_entry != ft->end())
+        // {
+      if (m_queue.Find (i->first))
         {
-          SendPacketFromQueue (*i, ft_entry->second.GetRoute ());
+          SendPacketFromQueue (i->first, i->second.GetRoute (), i->second.GetRouteState ());
         }
-    } 
+        // }
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -1044,11 +1048,12 @@ RoutingProtocol::SendHello ()
     }
 }
 void 
-RoutingProtocol::SendPacketFromQueue (Ipv4Address dst, Ptr<Ipv4Route> route)
+RoutingProtocol::SendPacketFromQueue (Ipv4Address dst, Ptr<Ipv4Route> route, RouteState state)
 {
   NS_LOG_FUNCTION (this);
   QueueEntry queueEntry;
-  while (m_queue.Dequeue (dst, queueEntry))
+  u_int32_t sval = (state == ACTIVE) ? 2 : 1; 
+  while (m_queue.Dequeue (dst, queueEntry, sval))
     {
       DeferredRouteOutputTag tag;
       Ptr<Packet> p = ConstCast<Packet> (queueEntry.GetPacket ());
@@ -1342,6 +1347,20 @@ RoutingProtocol::RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt)
                   erase_ips.clear ();
                   std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
                   /*for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator o = n_dvt_entries->begin (); o != n_dvt_entries->end (); ++o)
+                    {
+                      std::cout<<"Neighbor: " << i->m_neighborAddress << " Destination: " << o->first << std::endl;
+                    }
+                  */
+                }
+              if (!erase_ips.empty ())
+                {
+                  for (std::list<Ipv4Address>::iterator r = erase_ips.begin (); r != erase_ips.end (); ++r)
+                    {
+                      (*dvt)[i->m_neighborAddress]->erase(*r);
+                    }
+                  erase_ips.clear ();
+                  /*std::map<Ipv4Address, RoutingTableEntry>* n_dvt_entries = (*dvt)[i->m_neighborAddress];
+                  for (std::map<Ipv4Address, RoutingTableEntry>::const_iterator o = n_dvt_entries->begin (); o != n_dvt_entries->end (); ++o)
                     {
                       std::cout<<"Neighbor: " << i->m_neighborAddress << " Destination: " << o->first << std::endl;
                     }
