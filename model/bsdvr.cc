@@ -1133,7 +1133,8 @@ RoutingProtocol::SendTriggeredUpdateToNeighbor (Ipv4Address ne)
       {
         continue;
       }
-      if (i->first != m_mainAddress && i->first != ne && ne != Ipv4Address () && i->first != Ipv4Address ("10.1.1.255") && i->first != Ipv4Address ("127.0.0.1") && !i->first.IsBroadcast ())
+      /// FIXME: revisit if this filter is still required and is working as intended
+      if (i->first != m_mainAddress && i->first != ne && i->first != Ipv4Address ("127.0.0.1"))
         {
           SendUpdate (i->second, ne);
         }
