@@ -69,7 +69,93 @@ private:
   */
 std::ostream & operator<< (std::ostream & os, Status const & s);
 
-
+/**
+ * \ingroup bsdvr
+ * \brief BSDVR Pending Reply Entry
+ */
+class PendingReplyEntry
+{
+public:
+  /**
+   * constructor
+   *
+   * \param ne neighbor ip
+   * \param dst destination ip
+   * \param wait the pending time
+   */
+  PendingReplyEntry (Ipv4Address ne = Ipv4Address (), Ipv4Address dst = Ipv4Address (),
+                     Time wait = Simulator::Now ())
+    : m_ne (ne),
+      m_dst (dst),
+      m_time (wait + Simulator::Now ())
+  {
+  }
+  /**
+   * \brief Compare reply entries
+   * \param o PendingReplyEntry to compare
+   * \return true if equal
+   */
+  bool operator== (PendingReplyEntry const & o) const
+  {
+    return ((m_ne == o.m_ne) && (m_dst == o.m_dst) && (m_time == o.m_time));
+  }
+  // Fields
+  /**
+   * Get IPv4 address for neighbor
+   * \returns the IPv4 address
+   */
+  Ipv4Address GetNeighbor () const
+  {
+    return m_ne;
+  }
+  /**
+   * Set IPv4 address for neighbor
+   * \param ip the IPv4 address
+   */
+  void SetNeighbor (Ipv4Address ip)
+  {
+    m_ne = ip;
+  }
+  /**
+   * Get IPv4 address for destination
+   * \returns the IPv4 address
+   */
+  Ipv4Address GetDestination () const
+  {
+    return m_dst;
+  }
+  /**
+   * Set IPv4 address for destination
+   * \param ip the IPv4 address
+   */
+  void SetDestination (Ipv4Address ip)
+  {
+    m_dst = ip;
+  }
+  /**
+   * Set pending reply time
+   * \param wait the pending time
+   */
+  void SetPendingTime (Time wait)
+  {
+    m_time = wait + Simulator::Now ();
+  }
+  /**
+   * Get remaining pending reply timer
+   * \returns the remaining pending time
+   */
+  Time GetPendingTime () const
+  {
+    return m_time - Simulator::Now ();
+  }
+private:
+  /// Neighbor ip
+  Ipv4Address m_ne;
+  /// Destination ip
+  Ipv4Address m_dst;
+  /// Pending reply time
+  Time m_time;
+};
 /**
  * \ingroup bsdvr
  * \brief BSDVR Queue Entry
@@ -202,6 +288,125 @@ private:
   UnicastForwardCallback m_ucb;
   /// Error callback
   ErrorCallback m_ecb;
+};
+/**
+ * \ingroup bsdvr
+ * \brief BSDVR Pending Reply Queue
+ * A queue used by the routing layer to keep hold off sending UPDATE messages to restore lost
+ * neighbor entries in order to avoid count-to-infinty loops setup by upstream node failures
+ */
+class BsdvrPendingReplyQueue
+{
+public:
+  /**
+   * constructor
+   *
+   * \param maxLen the maximum length
+   * \param timeout the route to queue timeout
+   */
+  BsdvrPendingReplyQueue (uint32_t maxLen, Time timeout)
+    : m_maxLen (maxLen),
+      m_timeout (timeout)
+  {
+  }
+  /**
+   * Push entry in queue, if there is no entry with the same neighbor and destination address in queue.
+   * \param pr_entry the queue entry
+   * \returns true if the entry is queued
+   */
+  bool Enqueue (PendingReplyEntry & pr_entry);
+  /**
+   * Return first found (the oldest) entry for a given neighbor
+   * 
+   * \param ne the neighbor IP address
+   * \param pr_entry the queue entry
+   * \returns true if the entry is dequeued
+   */
+  bool Dequeue (Ipv4Address ne, PendingReplyEntry & pr_entry);
+  /**
+   * Remove all entries with neighbor IP address ne
+   * \param ne the destination IP address
+   */
+  void DropEntryWithNeighbor (Ipv4Address ne);
+  /**
+   * Finds whether an entry with neighbor ne exists in the queue
+   * 
+   * \param ne the neighbor IP address
+   * \returns true if an entry with the IP address is found
+   */
+  bool Find (Ipv4Address ne);
+  /**
+   * \returns the number of entries
+   */
+  uint32_t GetSize ();
+
+  // Fields
+  /**
+   * Get maximum queue length
+   * \returns the maximum queue length
+   */
+  uint32_t GetMaxQueueLen () const
+  {
+    return m_maxLen;
+  }
+  /**
+   * Set maximum queue length
+   * \param len The maximum queue length
+   */
+  void SetMaxQueueLen (uint32_t len)
+  {
+    m_maxLen = len;
+  }
+  /**
+   * Get queue timeout
+   * \returns the queue timeout
+   */
+  Time GetQueueTimeout () const
+  {
+    return m_timeout;
+  }
+  /**
+   * Set queue timeout
+   * \param t The queue timeout
+   */
+  void SetQueueTimeout (Time t)
+  {
+    m_timeout = t;
+  }
+  /**
+   * Set entry timeout callback
+   * \param cb the callback function
+   */
+  void SetCallback (Callback<void, PendingReplyEntry> cb)
+  {
+    m_handlePRTimeout = cb;
+  }
+  /**
+   * Get entry timeout callback
+   * \returns the callback
+   */
+  Callback<void, PendingReplyEntry> GetCallback () const
+  {
+    return m_handlePRTimeout;
+  }
+
+private:
+  /// pending reply timeout callback
+  Callback<void, PendingReplyEntry> m_handlePRTimeout;
+  /// the queue
+  std::vector<PendingReplyEntry> m_prqueue;
+  /// send all expired entries and remove them from queue
+  void Purge ();
+  /**
+   * Notify that entry is dropped from queue by timeout
+   * \param en the queue entry to drop
+   * \param reason the reason to drop the entry
+   */
+  void Drop (PendingReplyEntry en, std::string reason);
+  /// the maximum number of pending reply entries allowed to be buffered
+  uint32_t m_maxLen;
+  /// the maximum period of time for which a pending reply can be buffered
+  Time m_timeout;
 };
 /**
  * \ingroup bsdvr

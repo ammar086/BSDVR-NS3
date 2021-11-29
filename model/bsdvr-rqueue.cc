@@ -11,6 +11,143 @@ NS_LOG_COMPONENT_DEFINE ("BsdvrRequestQueue");
 
 namespace bsdvr {
 
+//-----------------------------------------------------------------------------
+
+/*
+ BSDVR Pending Reply Queue Functions
+ */
+
+u_int32_t
+BsdvrPendingReplyQueue::GetSize ()
+{
+  return m_prqueue.size ();
+}
+
+bool
+BsdvrPendingReplyQueue::Enqueue (PendingReplyEntry & pr_entry)
+{
+  NS_LOG_FUNCTION ("Enqueing entry for " << pr_entry.GetNeighbor () << "for destination " << pr_entry.GetDestination ());
+  Purge ();
+  for (std::vector<PendingReplyEntry>::const_iterator i = m_prqueue.begin (); 
+       i != m_prqueue.end (); ++i)
+    {
+      if (i->GetNeighbor () == pr_entry.GetNeighbor ()
+          && i->GetDestination() == pr_entry.GetDestination ())
+        {
+          return false;
+        }
+    }
+  pr_entry.SetPendingTime (m_timeout);
+  if (m_prqueue.size () == m_maxLen)
+    {
+      Drop (m_prqueue.front (), "Drop the most aged entry"); // Drop the most aged entry
+      m_prqueue.erase (m_prqueue.begin ());
+    }
+  m_prqueue.push_back(pr_entry);
+  return true;
+}
+void
+BsdvrPendingReplyQueue::DropEntryWithNeighbor (Ipv4Address ne)
+{
+  NS_LOG_FUNCTION (this << ne);
+  /// FIXME: purge call removed here due to presence of callback
+  //Purge ();
+  for (std::vector<PendingReplyEntry>::iterator i = m_prqueue.begin ();
+       i != m_prqueue.end (); ++i)
+    {
+      if (i->GetNeighbor () == ne)
+        {
+          Drop (*i, "Droppoing entries for given neighbor");
+        }
+    }
+  auto new_end = std::remove_if (m_prqueue.begin (), m_prqueue.end (),
+  [&](const PendingReplyEntry& en) {return en.GetNeighbor () == ne; });
+  m_prqueue.erase (new_end, m_prqueue.end ());
+}
+bool
+BsdvrPendingReplyQueue::Dequeue (Ipv4Address ne, PendingReplyEntry & pr_entry)
+{
+  /// FIXME: purge call removed here due to presence of callback
+  //Purge ();
+  for (std::vector<PendingReplyEntry>::iterator i = m_prqueue.begin ();
+       i != m_prqueue.end (); ++i)
+    {
+      if (i->GetNeighbor () == ne)
+        {
+          pr_entry = *i;
+          m_prqueue.erase (i);
+          return true;
+        }
+    }
+  return false;
+}
+bool
+BsdvrPendingReplyQueue::Find (Ipv4Address ne)
+{
+  for (std::vector<PendingReplyEntry>::const_iterator i = m_prqueue.begin ();
+       i != m_prqueue.end (); ++i)
+    {
+      if (i->GetNeighbor () == ne)
+        {
+          return true;
+        }
+    }
+  return false;
+}
+
+/**
+ * \brief IsExpired structure
+ */
+struct IsExpired
+{
+  bool
+  /**
+   * Check if the entry is expired
+   *
+   * \param p PendingReplyEntry entry
+   * \return true if expired, false otherwise
+   */
+  operator() (PendingReplyEntry const & p) const
+  {
+    return (p.GetPendingTime () < Seconds (0));
+  }
+};
+void
+BsdvrPendingReplyQueue::Purge ()
+{
+  if (m_prqueue.empty ())
+    {
+      return;
+    }
+
+  IsExpired pred;
+  if (!m_handlePRTimeout.IsNull ())
+  {
+    for (std::vector<PendingReplyEntry>::iterator i = m_prqueue.begin (); 
+       i != m_prqueue.end (); ++i)
+      {
+        if (pred (*i))
+          {
+            Drop (*i, "Pending reply entry timer expired ");
+            m_handlePRTimeout (*i);
+          }
+      }
+  }
+  m_prqueue.erase (std::remove_if (m_prqueue.begin (), m_prqueue.end (), pred), m_prqueue.end ());
+}
+void
+BsdvrPendingReplyQueue::Drop (PendingReplyEntry en, std::string reason)
+{
+  NS_LOG_LOGIC (reason << en.GetNeighbor () << " " << en.GetDestination ());
+  return;
+}
+
+//-----------------------------------------------------------------------------
+
+/*
+ BSDVR Queue Functions
+ */
+
 uint32_t
 BsdvrQueue::GetSize ()
 {

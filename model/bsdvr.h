@@ -32,25 +32,52 @@ public:
    * \brief Get the type ID.
    * \return the object TypeId
    */
-  /*Done*/static TypeId GetTypeId (void);
+  static TypeId GetTypeId (void);
   static const u_int32_t BSDVR_PORT;
 
   /// constructor
-  /*Done*/RoutingProtocol ();
-  /*Done*/virtual ~RoutingProtocol ();
-  /*Done*/virtual void DoDispose ();
+  RoutingProtocol ();
+  virtual ~RoutingProtocol ();
+  virtual void DoDispose ();
 
   // Inherited from Ipv4RoutingProtocol
-  /*Done*/Ptr<Ipv4Route> RouteOutput (Ptr<Packet> p, const Ipv4Header &header, Ptr<NetDevice> oif, Socket::SocketErrno &sockerr);
+  Ptr<Ipv4Route> RouteOutput (Ptr<Packet> p, const Ipv4Header &header, Ptr<NetDevice> oif, Socket::SocketErrno &sockerr);
   bool RouteInput (Ptr<const Packet> p, const Ipv4Header &header, Ptr<const NetDevice> idev, UnicastForwardCallback ucb, 
                    MulticastForwardCallback mcb, LocalDeliverCallback lcb, ErrorCallback ecb);
-  /*Done*/virtual void NotifyInterfaceUp (uint32_t interface);
-  /*Done*/virtual void NotifyInterfaceDown (uint32_t interface);
-  /*Done*/virtual void NotifyAddAddress (uint32_t interface, Ipv4InterfaceAddress address);
-  /*Done*/virtual void NotifyRemoveAddress (uint32_t interface, Ipv4InterfaceAddress address);
-  /*Done*/virtual void SetIpv4 (Ptr<Ipv4> ipv4);
-  /*Done*/virtual void PrintRoutingTable (Ptr<OutputStreamWrapper> stream, Time::Unit unit = Time::S) const;
+  virtual void NotifyInterfaceUp (uint32_t interface);
+  virtual void NotifyInterfaceDown (uint32_t interface);
+  virtual void NotifyAddAddress (uint32_t interface, Ipv4InterfaceAddress address);
+  virtual void NotifyRemoveAddress (uint32_t interface, Ipv4InterfaceAddress address);
+  virtual void SetIpv4 (Ptr<Ipv4> ipv4);
+  virtual void PrintRoutingTable (Ptr<OutputStreamWrapper> stream, Time::Unit unit = Time::S) const;
   
+  // Handle protocol parameters
+  /**
+   * Get maximum penidng reply queue time
+   * \returns the maximum queue time
+   */
+  Time GetMaxPRQueueTime () const
+  {
+    return m_maxPRQueueTime;
+  }
+  /**
+   * Set the maximum pending reply queue time
+   * \param t the maximum queue time
+   */
+  void SetMaxPRQueueTime (Time t);
+  /**
+   * Get the maximum pending reply queue length
+   * \returns the maximum queue length
+   */
+  uint32_t GetMaxPRQueueLen () const
+  {
+    return m_maxPRQueueLen;
+  }
+  /**
+   * Set the maximum pending reply queue length
+   * \param len the maximum queue length
+   */
+  void SetMaxPRQueueLen (uint32_t len);
   /**
    * Get the maximum queue length
    * \returns the maximum queue length
@@ -63,7 +90,7 @@ public:
    * Set the maximum queue length
    * \param len the maximum queue length
    */
-  /*Done*/void SetMaxQueueLen (uint32_t len);
+  void SetMaxQueueLen (uint32_t len);
   /**
    * Set hello enable
    * \param f the hello enable flag
@@ -105,7 +132,7 @@ public:
    * \param stream first stream index to use
    * \return the number of stream indices assigned by this model
    */
-  /*Done*/int64_t AssignStreams (int64_t stream);
+  int64_t AssignStreams (int64_t stream);
   /// NOTE: Remove these dummy functions
   bool isBetterRoute2 (RoutingTableEntry & r1, RoutingTableEntry & r2)
   {
@@ -118,7 +145,7 @@ public:
   }
 
 protected:
-  /*Done*/virtual void DoInitialize (void);
+  virtual void DoInitialize (void);
 private:
   /**
    * Notify that an MPDU was dropped.
@@ -126,7 +153,7 @@ private:
    * \param reason the reason why the MPDU was dropped
    * \param mpdu the dropped MPDU
    */
-  /*Done*/void NotifyTxError (WifiMacDropReason reason, Ptr<const WifiMacQueueItem> mpdu);
+  void NotifyTxError (WifiMacDropReason reason, Ptr<const WifiMacQueueItem> mpdu);
 
   // Protocol parameters
   /// Nodes IP address
@@ -157,6 +184,15 @@ private:
   uint32_t m_maxQueueLen;
   /// A "drop-front" queue used by the routing layer with binary state precedence rules to buffer packets to which it does not have a route.
   BsdvrQueue m_queue;
+  /// the maximum number of pending reply entries allowed to be buffered
+  uint32_t m_maxPRQueueLen;
+  ///The maximum period of time allowed to buffer pending reply entries.
+  Time m_maxPRQueueTime;
+  /**
+   * A queue used by the routing layer to keep hold off sending UPDATE messages to restore lost
+   * neighbor entries in order to avoid count-to-infinty loops setup by upstream node failures
+   */
+  BsdvrPendingReplyQueue m_prqueue;  
 
 private:
   /// Start protocol operation
@@ -168,7 +204,7 @@ private:
    * \param ucb the UnicastForwardCallback function
    * \param ecb the ErrorCallback function
    */
-  /*Done*/void DeferredRouteOutput (Ptr<const Packet> p, const Ipv4Header & header, UnicastForwardCallback ucb, ErrorCallback ecb);
+  void DeferredRouteOutput (Ptr<const Packet> p, const Ipv4Header & header, UnicastForwardCallback ucb, ErrorCallback ecb);
   /**
    * If route exists and is valid, forward packet.
    * \param p the packet to route
@@ -183,14 +219,14 @@ private:
    * \param src the source IP address
    * \returns true if the IP address is the node's IP address
    */
-  /*Done*/bool IsMyOwnAddress (Ipv4Address src);
+  bool IsMyOwnAddress (Ipv4Address src);
   /**
    * Find unicast socket with local interface address iface
    *
    * \param iface the interface
    * \returns the socket associated with the interface
    */
-  /*Done*/Ptr<Socket> FindSocketWithInterfaceAddress (Ipv4InterfaceAddress iface) const;
+  Ptr<Socket> FindSocketWithInterfaceAddress (Ipv4InterfaceAddress iface) const;
   /**
    * Find subnet directed broadcast socket with local interface address iface
    *
@@ -251,10 +287,14 @@ private:
    * \param toOrigin routing table entry to originator
    */
   void SendUpdate (RoutingTableEntry const & rt, Ipv4Address const & dst);
-  /** Send Updates when link fails with neighbor
+  /** Send Update(s) to other acive neighbor(s) when link fails with a neighbor
    * \param neighbor the neighbor node
    */
   void SendUpdateOnLinkFailure (Ipv4Address ne);
+  /** Send Update to neighbor when its pending reply entry timer expires
+   * \param entry the pending reply entry
+   */
+  void SendUpdateOnPendingReplyEntryTimeout (PendingReplyEntry en);
   /// Send complete forwarding table entries to new neighbor
   void SendTriggeredUpdateToNeighbor (Ipv4Address ne);
   /**
@@ -286,30 +326,35 @@ private:
 
   /// BSDVR Control Plane Functions
 
-  /*Done*/bool isBetterRoute (RoutingTableEntry & r1, RoutingTableEntry & r2);
+  bool isBetterRoute (RoutingTableEntry & r1, RoutingTableEntry & r2);
   /**
    * Remove alternative routes from DVT to avoid fake routes - [doesnot remove direct neighbor routes]
    * \param nxtHp nexthop's address
    * \param rt  new entry with destination address dst
    */
-  /*Done*/void RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt); 
+  void RemoveFakeRoutes (Ipv4Address nxtHp, RoutingTableEntry & rt); 
   /**
    * Update existing routes in DVT or add new routes
    * \param nxtHp nexthop's address
    * \param rt  new entry with destination address dst
    */
-  /*Done*/void UpdateDistanceVectorTable (Ipv4Address nxtHp, RoutingTableEntry & rt); 
+  void UpdateDistanceVectorTable (Ipv4Address nxtHp, RoutingTableEntry & rt); 
   /**
    * Update changes in existing routes from updated DVT
    * \param dst destination address
    * \param nxtHp nexthop's address
    */
-  /*Done*/void RefreshForwardingTable (Ipv4Address dst, Ipv4Address nxtHp);
+  void RefreshForwardingTable (Ipv4Address dst, Ipv4Address nxtHp);
    /**
    * Replace existing routes with by alternative routes from updated DVT if any
    * \returns a list of newly installed routes in FT to broadcast to neighbors
    */
-  /*Done*/std::list<Ipv4Address> ComputeForwardingTable ();
+  std::list<Ipv4Address> ComputeForwardingTable ();
+  /**
+   * Add entries to pending reply queue on receiveing inactive Update from neighbor
+   * \param upt header of inactive Update message received from neighbor
+   */ 
+  void RetransmitToNeighbor (UpdateHeader & upt);
 
   /// Provides uniform random variables.
   Ptr<UniformRandomVariable> m_uniformRandomVariable;

@@ -115,14 +115,18 @@ NS_OBJECT_ENSURE_REGISTERED (DeferredRouteOutputTag);
 //-----------------------------------------------------------------------------
 RoutingProtocol::RoutingProtocol ()
   : m_enableHello (false),
-    m_helloInterval (Seconds (2)),
+    m_helloInterval (Seconds (1)),
     m_nb (m_helloInterval),
     m_maxQueueLen (64),
     m_queue (m_maxQueueLen),
+    m_maxPRQueueLen (50),
+    m_maxPRQueueTime (Seconds (1)),
+    m_prqueue (m_maxPRQueueLen, m_maxPRQueueTime),
     m_htimer (Timer::CANCEL_ON_DESTROY),
     m_lastBcastTime (Seconds (0))
 {
   m_nb.SetCallback (MakeCallback (&RoutingProtocol::SendUpdateOnLinkFailure, this));
+  m_prqueue.SetCallback (MakeCallback (&RoutingProtocol::SendUpdateOnPendingReplyEntryTimeout, this));
 }
 
 TypeId
@@ -142,6 +146,16 @@ RoutingProtocol::GetTypeId (void)
                    MakeUintegerAccessor (&RoutingProtocol::SetMaxQueueLen,
                                          &RoutingProtocol::GetMaxQueueLen),
                    MakeUintegerChecker<uint32_t> ())
+    .AddAttribute ("MaxPRQueueLen", "Maximum number of pending reply entries allowed to be buffered.",
+                   UintegerValue (50),
+                   MakeUintegerAccessor (&RoutingProtocol::SetMaxPRQueueLen,
+                                         &RoutingProtocol::GetMaxPRQueueLen),
+                   MakeUintegerChecker<uint32_t> ())
+    .AddAttribute ("MaxPRQueueTime", "Maximum period of time allowed to buffer pending reply entries (in seconds)",
+                   TimeValue (Seconds (1)),
+                   MakeTimeAccessor (&RoutingProtocol::SetMaxPRQueueTime,
+                                     &RoutingProtocol::GetMaxPRQueueTime),
+                   MakeTimeChecker ())
     .AddAttribute ("EnableHello", "Indicates whether a hello messages enable.",
                    BooleanValue (true),
                    MakeBooleanAccessor (&RoutingProtocol::SetHelloEnable,
@@ -167,10 +181,21 @@ RoutingProtocol::SetMaxQueueLen (uint32_t len)
   m_maxQueueLen = len;
   m_queue.SetMaxQueueLen (len);
 }
+void
+RoutingProtocol::SetMaxPRQueueLen (uint32_t len)
+{
+  m_maxPRQueueLen = len;
+  m_prqueue.SetMaxQueueLen (len);
+}
+void
+RoutingProtocol::SetMaxPRQueueTime (Time t)
+{
+  m_maxPRQueueTime = t;
+  m_prqueue.SetQueueTimeout (t);
+}
 RoutingProtocol::~RoutingProtocol ()
 {
 }
-
 void
 RoutingProtocol::DoDispose ()
 {
@@ -960,7 +985,6 @@ RoutingProtocol::RecvUpdate (Ptr<Packet> p, Ipv4Address my, Ipv4Address src)
   Ipv4Address dst = uptHeader.GetDst ();
   NS_LOG_LOGIC ("UPDATE destination " << dst << " UPDATE origin " << uptHeader.GetOrigin ());
   uint8_t hop = uptHeader.GetHopCount () + 1;
-  uptHeader.SetHopCount (hop);
   /*
    * If the route table entry to the destination is created or updated :
    * - the route is added/updated in the distance vector table <= UpdateDistanceVectorTable ()
@@ -982,6 +1006,10 @@ RoutingProtocol::RecvUpdate (Ptr<Packet> p, Ipv4Address my, Ipv4Address src)
   /// NOTE: Add Broadcast changes function here
   SendTriggeredUpdateChangesToNeighbors (changes, nex);
   /// NOTE: Add Re-Transmit current entry function here
+  if (state == 0 && dst != uptHeader.GetOrigin ())
+    {
+      RetransmitToNeighbor (uptHeader);
+    }
   /// NOTE: Send buffered packets
   // std::map<Ipv4Address, RoutingTableEntry>::iterator ft_entry;
   std::map<Ipv4Address, RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
@@ -1119,6 +1147,41 @@ RoutingProtocol::SendUpdateOnLinkFailure (Ipv4Address ne)
           UpdateDistanceVectorTable (ne, rt);
           changes = ComputeForwardingTable ();
           SendTriggeredUpdateChangesToNeighbors (changes, nex);
+        }
+    }
+}
+void 
+RoutingProtocol::SendUpdateOnPendingReplyEntryTimeout (PendingReplyEntry en)
+{
+  Ipv4Address ne = en.GetNeighbor ();
+  Ipv4Address dst = en.GetDestination ();
+  std::vector<Neighbors::Neighbor> neighbors = m_nb.GetNeighbors ();
+  std::map<Ipv4Address, RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
+  // Iterators
+  std::vector<Neighbors::Neighbor>::iterator ne_find;
+  std::map<Ipv4Address, RoutingTableEntry>::iterator dst_find;
+  /// FIXME: make filter upper bound dynamic for variable number of nodes in the network
+  if ((Ipv4Address ("10.1.1.0") < ne) && (ne) < Ipv4Address ("10.1.1.51"))
+    {
+      return;
+    }
+  NS_LOG_FUNCTION (this << "Sending pending reply to " << ne << " for destination " << dst);
+  for (ne_find = neighbors.begin (); ne_find != neighbors.end (); ++ne_find)
+    {
+      if (ne_find->m_neighborAddress == ne)
+        {
+          break;
+        }
+    }
+  dst_find = ft->find (dst);
+  // Checking if neighbor still active and dst entry available in ft
+  if (dst_find != ft->end () && ne_find != neighbors.end ())
+    {
+      if (dst_find->second.GetRouteState () == ACTIVE && dst_find->second.GetNextHop () != ne)
+        {
+          // sending pending reply to neighbor
+          std::cout << "Sending Update to " << ne << "after expiry of pending reply timer" << std::endl;
+          SendUpdate (dst_find->second, ne);
         }
     }
 }
@@ -1486,6 +1549,80 @@ RoutingProtocol::ComputeForwardingTable ()
       }
   changes.remove (m_mainAddress);
   return changes;
+}
+
+void 
+RoutingProtocol::RetransmitToNeighbor (UpdateHeader & upt)
+{
+  Ipv4Address nxtHp;
+  Ipv4Address dst = upt.GetDst ();
+  Ipv4Address ne = upt.GetOrigin ();
+  NS_LOG_FUNCTION (this << ne);
+  std::vector<Neighbors::Neighbor> neighbors = m_nb.GetNeighbors ();
+  std::map<Ipv4Address, RoutingTableEntry>* ft = m_routingTable.GetForwardingTable ();
+  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>*>* dvt = m_routingTable.GetDistanceVectorTable ();
+  // Iterators
+  std::vector<Neighbors::Neighbor>::iterator ne_find;
+  std::map<Ipv4Address, RoutingTableEntry>::iterator dst_find;
+  std::map<Ipv4Address, RoutingTableEntry>::iterator dv_entry;
+  std::map<Ipv4Address, std::map<Ipv4Address, RoutingTableEntry>*>::iterator n_dvt_find;
+  // Retransmission params
+  u_int32_t c1, c2, c3, c5, l2;
+  /// FIXME: make filter upper bound dynamic for variable number of nodes in the network
+  if ((Ipv4Address ("10.1.1.0") < ne) && (ne) < Ipv4Address ("10.1.1.51"))
+    {
+      return;
+    }
+  for (ne_find = neighbors.begin (); ne_find != neighbors.end (); ++ne_find)
+    {
+      if (ne_find->m_neighborAddress == ne)
+        {
+          break;
+        }
+    }
+  dst_find = ft->find (dst);
+  // Checking if neighbor still active and dst entry available in ft
+  if (dst_find != ft->end () && ne_find != neighbors.end ())
+    {
+      // cost for reaching ne from current nxtHp for dst in ft
+      c5 = 0;
+      nxtHp = dst_find->second.GetNextHop ();
+      if (dst_find->second.GetRouteState () == ACTIVE && nxtHp != ne)
+        {
+          n_dvt_find = dvt->find(nxtHp);
+          if (n_dvt_find != dvt->end ())
+            {
+              dv_entry = (*dvt)[nxtHp]->find (ne);
+              if (dv_entry != (*dvt)[nxtHp]->end ())
+                {
+                  c5 = (*(*dvt)[nxtHp])[ne].GetHop ();
+                }
+            }
+          // cost for reaching dst at ne
+          c2 = upt.GetHopCount ();
+          // cost for reaching dst at ne 
+          l2 = 1;
+          // cost for reaching current nxtHp for dst 
+          c1 = dst_find->second.GetHop ();
+          // cost for reaching dst at nxtHp
+          c3 = c1 - l2;
+          if ((c3 == 0) || (c5 == c2+c3))
+            {
+              // send immediate reply
+              std::cout<< "Send pending reply immediately to " << ne << std::endl;
+              SendUpdate(dst_find->second, ne);
+            }
+          else
+            {
+              // populate pending reply entry in queue
+              std::cout<< "Adding pending reply entry to queue for" << ne << std::endl;
+              PendingReplyEntry en (/*neighbor*/ ne, /*destination*/ dst);
+              m_prqueue.Enqueue (en);
+            } 
+
+        }
+    }
+  
 }
 
 }  // namespace bsdvr
